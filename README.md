@@ -126,8 +126,11 @@ anonimizador/
 ├── docker-compose.ha.yml   # HA completo: haproxy + 5 instancias activas + redis
 ├── haproxy.cfg             # Config base para HAProxy en host
 ├── haproxy.ha.cfg          # Config para HAProxy dentro de Docker Compose HA
+├── haproxy-503.http         # Pagina 503 de espera con refresh cada 10s
 ├── HAPROXY.md              # Guia de balanceo y health checks
 ├── OPERACION-HA.md         # Runbook single-instance + HA
+├── testing/                # Smoke tests bash (single, HA, run_all) + logs locales
+├── .github/workflows/      # Pipeline CI (GitHub Actions)
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 ├── .env                    # Configuración sensible
@@ -359,6 +362,31 @@ curl -s -c /tmp/cookies.txt -X POST -H 'Content-Type: application/json' \
   -d '{"user":"adminanon","password":"cambiar-esta-clave"}' http://localhost:5000/admin/login
 curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json.tool
 ```
+
+## 🧪 Smoke tests automatizados
+
+Se incluye una base de testing por scripts en `testing/`:
+
+- `testing/smoke_single.sh` valida modo single (`docker-compose.yml`)
+- `testing/smoke_ha.sh` valida modo HA (`docker-compose.ha.yml` + HAProxy)
+- `testing/run_all.sh` ejecuta ambos en secuencia
+
+Uso local:
+
+```bash
+./testing/run_all.sh
+```
+
+Logs:
+
+- Se guardan en `testing/logs/` (ignorado por git)
+
+CI en GitHub Actions:
+
+- Workflow: `.github/workflows/smoke-tests.yml`
+- Jobs: `smoke-single` y `smoke-ha`
+- Si falta `.env` en runner, el workflow crea uno temporal con `cp .env.example .env`
+- Publica artifacts con logs al finalizar
 
 ---
 

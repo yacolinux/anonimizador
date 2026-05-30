@@ -85,3 +85,27 @@ curl -s http://localhost:8404/stats
 ```
 
 Debe responder `ready=true` cuando la instancia esta libre y `503` cuando esta ocupada.
+
+## 8) Smoke tests y CI
+
+Scripts locales disponibles en `testing/`:
+
+- `testing/smoke_single.sh` valida modo single (`docker-compose.yml`)
+- `testing/smoke_ha.sh` valida modo HA (`docker-compose.ha.yml`)
+- `testing/run_all.sh` ejecuta ambos en secuencia
+
+Ejecucion recomendada:
+
+```bash
+./testing/run_all.sh
+```
+
+Logs locales:
+
+- se guardan en `testing/logs/` (ignorado por git)
+
+Pipeline CI:
+
+- workflow: `.github/workflows/smoke-tests.yml`
+- corre en `push`, `pull_request` y `workflow_dispatch`
+- el runner crea `.env` temporal con `cp .env.example .env` antes de ejecutar tests

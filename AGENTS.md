@@ -81,6 +81,8 @@ anonimizador/
 ├── haproxy-503.http        # Pagina 503 con auto-reintento cada 10s
 ├── HAPROXY.md              # Guía de balanceo
 ├── OPERACION-HA.md         # Runbook single + HA
+├── testing/                # Scripts smoke test (single/HA/run_all)
+├── .github/workflows/      # CI pipeline (smoke tests)
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 └── .env                    # Configuración sensible
@@ -187,3 +189,11 @@ curl -s -c /tmp/cookies.txt -X POST -H 'Content-Type: application/json' \
 # Test admin config
 curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json.tool
 ```
+
+## Testing automatizado
+
+- `testing/smoke_single.sh`: smoke para `docker-compose.yml`
+- `testing/smoke_ha.sh`: smoke para `docker-compose.ha.yml`
+- `testing/run_all.sh`: ejecuta single + HA en secuencia
+- Logs locales: `testing/logs/` (ignorado en git)
+- CI: `.github/workflows/smoke-tests.yml` ejecuta smoke tests en `push`, `pull_request` y `workflow_dispatch`
