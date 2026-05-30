@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anonimizador de Documentos</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app-container">
+  <header class="app-header">
+    <h1>Anonimizador de Documentos</h1>
+    <button class="theme-toggle" id="theme-toggle" title="Cambiar tema">&#x263E;</button>
+    <p class="subtitle">Detectar y Anonimizar Datos Personales y Confidenciales</p>
+  </header>
+
+  <div class="upload-area" id="upload-area">
+    <div class="upload-content" id="upload-content">
+      <div class="upload-icon">&#x1F4C4;</div>
+      <p class="upload-text">Arrastrá un archivo aquí o hacé clic</p>
+      <p class="upload-hint">PDF o DOCX &middot; Máx 50MB</p>
+      <button class="upload-btn" id="upload-btn">Cargar documento</button>
+      <input type="file" id="file-input" accept=".pdf,.docx" hidden>
+    </div>
+    <div class="upload-progress" id="upload-progress" hidden>
+      <div class="spinner"></div>
+      <p>Analizando documento con IA...</p>
+    </div>
+  </div>
+
+  <div class="main-layout" id="main-layout" hidden>
+    <div class="document-panel">
+      <div class="panel-header">
+        <h2>Documento</h2>
+        <span class="file-badge" id="file-badge"></span>
+      </div>
+      <div class="document-toolbar" id="document-toolbar">
+        <button class="btn-copy" id="btn-copy-text">Copiar Texto Anonimizado</button>
+      </div>
+      <div class="document-body" id="document-body"></div>
+    </div>
+
+    <div class="sidebar">
+      <div class="panel-header">
+        <h2>Palabras a anonimizar</h2>
+        <span class="count-badge" id="word-count">0</span>
+      </div>
+
+      <div class="mark-all-row">
+        <input type="checkbox" id="mark-all-cb" checked>
+        <label for="mark-all-cb">Marcar todas las palabras en el documento</label>
+      </div>
+
+      <div class="add-word-row">
+        <input type="text" id="add-word-input" placeholder="Agregar palabra manualmente...">
+        <button id="add-word-btn" class="btn-sm">+</button>
+      </div>
+
+      <div class="pii-list" id="pii-list">
+        <p class="empty-state" id="empty-state">Hacé clic en las palabras del documento para marcarlas como REDACTED, o agregá palabras manualmente arriba.</p>
+      </div>
+
+      <div class="export-section">
+        <h3>Exportar documento anonimizado</h3>
+        <div class="export-row">
+          <select id="export-format">
+            <option value="docx">DOCX</option>
+            <option value="pdf">PDF</option>
+          </select>
+          <button id="export-btn" class="btn-primary">Exportar</button>
+        </div>
+        <p class="export-hint" id="export-hint" hidden>Solo se puede exportar a PDF cuando el archivo original es PDF.</p>
+        <div class="replacement-row">
+          <label for="replacement-text">Texto de reemplazo:</label>
+          <input type="text" id="replacement-text" value="[REDACTADO]">
+        </div>
+        <button id="reason-btn" class="reason-btn" disabled>Ver Razonamiento</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="reason-modal" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Razonamiento de la IA</h3>
+      <button class="modal-close" id="reason-close">&times;</button>
+    </div>
+    <pre class="modal-body" id="reason-content"></pre>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<button class="admin-trigger" id="admin-trigger" title="Admin">&#9881;</button>
+
+<div class="modal-overlay" id="admin-modal" hidden>
+  <div class="modal-content admin-modal">
+    <div class="modal-header">
+      <h3>Panel de Administración</h3>
+      <button class="modal-close" id="admin-close">&times;</button>
+    </div>
+
+    <div class="admin-login-form" id="admin-login-form">
+      <input type="text" id="admin-user" placeholder="Usuario" autocomplete="off">
+      <input type="password" id="admin-pass" placeholder="Contraseña">
+      <button class="btn-primary" id="admin-login-btn">Ingresar</button>
+      <p class="admin-error" id="admin-login-error"></p>
+    </div>
+
+    <div class="admin-panel" id="admin-panel" hidden>
+      <div class="admin-tabs">
+        <button class="admin-tab active" data-tab="prompt">Prompt</button>
+        <button class="admin-tab" data-tab="patterns">Patrones Regex</button>
+        <button class="admin-tab" data-tab="model">Elegir Modelo</button>
+      </div>
+      <div class="admin-tab-content" id="admin-tab-prompt">
+        <textarea id="admin-prompt" rows="15"></textarea>
+        <button class="btn-primary" id="admin-save-prompt">Guardar Prompt</button>
+      </div>
+      <div class="admin-tab-content" id="admin-tab-patterns" hidden>
+        <textarea id="admin-patterns" rows="15"></textarea>
+        <button class="btn-primary" id="admin-save-patterns">Guardar Patrones</button>
+      </div>
+      <div class="admin-tab-content" id="admin-tab-model" hidden>
+        <label for="admin-model-url">API Endpoint URL:</label>
+        <input type="text" id="admin-model-url" placeholder="https://api.openrouter.ai/v1">
+        <label for="admin-model-name">Nombre del modelo:</label>
+        <input type="text" id="admin-model-name" placeholder="opencode/deepseek-v4-flash-free">
+        <button class="btn-primary" id="admin-save-model">Guardar Modelo</button>
+      </div>
+      <button class="admin-logout" id="admin-logout-btn">Cerrar sesión</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
