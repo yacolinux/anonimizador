@@ -19,7 +19,6 @@ logger = logging.getLogger('anonimizador')
 import pdfplumber
 import docx
 from docx import Document
-from docx.shared import Pt, RGBColor
 from fpdf import FPDF
 from flask import (
     Flask, render_template, request, jsonify,
@@ -223,6 +222,61 @@ def get_model_id():
     return parts[-1] if len(parts) > 1 else parts[0]
 
 
+def parse_pii_from_output(raw_output):
+    text = re.sub(r'\x1b\[[0-9;]*m', '', raw_output or '').strip()
+
+    candidates = []
+    fenced = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, re.DOTALL)
+    if fenced:
+        candidates.append(fenced.group(1))
+
+    inline_array = re.search(r'(\[\s*\{.*\}\s*\])', text, re.DOTALL)
+    if inline_array:
+        candidates.append(inline_array.group(1))
+
+    first_bracket = text.find('[')
+    last_bracket = text.rfind(']')
+    if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+        candidates.append(text[first_bracket:last_bracket + 1])
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, list):
+                cleaned = []
+                for item in parsed:
+                    if isinstance(item, dict) and 'word' in item and 'type' in item:
+                        word = str(item.get('word', '')).strip()
+                        ptype = str(item.get('type', 'other')).strip() or 'other'
+                        if word:
+                            cleaned.append({'word': word, 'type': ptype})
+                if cleaned:
+                    return cleaned
+        except json.JSONDecodeError:
+            continue
+
+    pair_matches = re.findall(
+        r'\{\s*["\']word["\']\s*:\s*["\']([^"\']+)["\']\s*,\s*["\']type["\']\s*:\s*["\']([^"\']+)["\']\s*\}',
+        text,
+        re.IGNORECASE,
+    )
+    if pair_matches:
+        return [{'word': w.strip(), 'type': t.strip() or 'other'} for w, t in pair_matches if w.strip()]
+
+    table_lines = [ln.strip() for ln in text.splitlines() if '|' in ln]
+    extracted = []
+    for ln in table_lines:
+        if ln.startswith('|---'):
+            continue
+        cols = [c.strip(' `') for c in ln.split('|') if c.strip()]
+        if len(cols) >= 2 and cols[0].lower() not in ('palabra', 'word'):
+            extracted.append({'word': cols[0], 'type': cols[1] or 'other'})
+    if extracted:
+        return extracted
+
+    return []
+
+
 def call_opencode_for_pii(text):
     model_id = get_model_id()
     prompt_template = get_opencode_prompt()
@@ -263,36 +317,15 @@ def call_opencode_for_pii(text):
         full_output = full_output.strip()
         logger.info('Respuesta opencode: %d chars', len(full_output))
 
-        json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', full_output, re.DOTALL)
-        if not json_match:
-            json_match = re.search(r'(\[\s*\{.*?\}\s*\])', full_output, re.DOTALL)
-        if json_match:
-            try:
-                parsed = json.loads(json_match.group(1) if json_match.lastindex else json_match.group())
-                if isinstance(parsed, list):
-                    logger.info('PII detectadas por IA: %d keywords', len(parsed))
-                    return parsed, full_output
-            except json.JSONDecodeError:
-                pass
+        parsed = parse_pii_from_output(full_output)
+        if parsed:
+            logger.info('PII detectadas por IA: %d keywords', len(parsed))
+            return parsed, full_output
 
-        json_match = re.search(r'(\{.*\})', full_output, re.DOTALL)
-        if json_match:
-            try:
-                obj = json.loads(json_match.group(1))
-                if isinstance(obj, dict):
-                    for key in ('pii', 'results', 'data', 'words', 'items', 'matches'):
-                        val = obj.get(key, [])
-                        if isinstance(val, list):
-                            return val, full_output
-                    if 'word' in obj:
-                        return [obj], full_output
-            except json.JSONDecodeError:
-                pass
-
-        logger.warning('No se pudo parsear JSON del output de opencode')
+        logger.warning('No se pudo parsear JSON del output de opencode. Preview: %s', full_output[:220])
         return [], full_output
     except subprocess.TimeoutExpired:
-        logger.error('Timeout al ejecutar opencode (15s)')
+        logger.error('Timeout al ejecutar opencode (120s)')
         return [], 'Error: Timeout al ejecutar opencode'
     except (json.JSONDecodeError, subprocess.CalledProcessError) as e:
         logger.error('Error ejecutando opencode: %s', e)
@@ -389,50 +422,51 @@ def replace_normalized(text, kw_word, replacement):
     return text
 
 
-def anonymize_docx(filepath, keywords, replacement='[REDACTED]'):
+def anonymize_docx(filepath, keywords, replacement='[REDACTADO]'):
     doc = Document(filepath)
+
+    def replace_text(text):
+        out = text
+        for kw in keywords:
+            if normalize_text(kw['word']).lower() in normalize_text(out).lower():
+                out = replace_normalized(out, kw['word'], replacement)
+        return out
+
+    def keep_run_style(paragraph):
+        if paragraph.runs:
+            src = paragraph.runs[0]
+            return {
+                'name': src.font.name,
+                'size': src.font.size,
+                'bold': src.font.bold,
+                'italic': src.font.italic,
+                'underline': src.font.underline,
+                'color': src.font.color.rgb,
+            }
+        return None
+
+    def apply_run_style(run, style):
+        if not style:
+            return
+        run.font.name = style['name']
+        run.font.size = style['size']
+        run.font.bold = style['bold']
+        run.font.italic = style['italic']
+        run.font.underline = style['underline']
+        run.font.color.rgb = style['color']
 
     def anonymize_paragraphs(paragraphs):
         for para in paragraphs:
-            full_text = para.text
-            norm_full = normalize_text(full_text).lower()
-            replacements = []
-            for kw in keywords:
-                norm_kw = normalize_text(kw['word']).lower()
-                start = 0
-                while True:
-                    idx = norm_full.find(norm_kw, start)
-                    if idx == -1:
-                        break
-                    replacements.append({
-                        'start': idx,
-                        'end': idx + len(kw['word']),
-                        'replacement': replacement
-                    })
-                    start = idx + 1
-            if not replacements:
+            original = para.text
+            if not original:
                 continue
-            replacements.sort(key=lambda r: r['start'], reverse=True)
-            char_offset = 0
-            for run in para.runs:
-                run_len = len(run.text)
-                run_start = char_offset
-                run_end = char_offset + run_len
-                for r in replacements:
-                    if r['end'] <= run_start or r['start'] >= run_end:
-                        continue
-                    local_start = max(r['start'] - run_start, 0)
-                    local_end = min(r['end'] - run_start, run_len)
-                    run.text = (
-                        run.text[:local_start] + r['replacement'] + run.text[local_end:]
-                    )
-                    run.font.color.rgb = RGBColor(255, 0, 0)
-                    run.font.bold = True
-                char_offset += run_len
-                for r in replacements:
-                    delta = len(r['replacement']) - (r['end'] - r['start'])
-                    r['start'] += delta
-                    r['end'] += delta
+            anonymized = replace_text(original)
+            if anonymized == original:
+                continue
+            style = keep_run_style(para)
+            para.text = anonymized
+            if para.runs:
+                apply_run_style(para.runs[0], style)
 
     anonymize_paragraphs(doc.paragraphs)
     for table in doc.tables:
@@ -460,10 +494,11 @@ def get_pdf_fonts():
     return regular, bold, None
 
 
-def anonymize_pdf(segments, keywords, replacement='[REDACTED]', title='Documento Anonimizado'):
-    pdf = FPDF()
+def anonymize_pdf(segments, keywords, replacement='[REDACTADO]', title='Documento Anonimizado'):
+    pdf = FPDF(format='A4')
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.set_margins(18, 18, 18)
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=20)
 
     regular_font, bold_font, _ = get_pdf_fonts()
     has_dejavu = regular_font is not None
@@ -471,6 +506,13 @@ def anonymize_pdf(segments, keywords, replacement='[REDACTED]', title='Documento
     if has_dejavu:
         pdf.add_font('DejaVuSans', '', regular_font, uni=True)
         pdf.add_font('DejaVuSans', 'B', bold_font, uni=True)
+
+    if has_dejavu:
+        pdf.set_font('DejaVuSans', 'B', 15)
+    else:
+        pdf.set_font('Helvetica', 'B', 15)
+    pdf.multi_cell(0, 8, title)
+    pdf.ln(2)
 
     for seg in segments:
         text = seg['text']
@@ -480,21 +522,28 @@ def anonymize_pdf(segments, keywords, replacement='[REDACTED]', title='Documento
 
         if has_dejavu:
             if seg['type'] == 'title':
-                pdf.set_font('DejaVuSans', 'B', 16)
+                pdf.set_font('DejaVuSans', 'B', 13)
             elif seg['type'] == 'list':
                 pdf.set_font('DejaVuSans', '', 11)
             else:
                 pdf.set_font('DejaVuSans', '', 11)
         else:
             if seg['type'] == 'title':
-                pdf.set_font('Helvetica', 'B', 16)
+                pdf.set_font('Helvetica', 'B', 13)
             elif seg['type'] == 'list':
                 pdf.set_font('Helvetica', '', 11)
             else:
                 pdf.set_font('Helvetica', '', 11)
 
-        pdf.multi_cell(0, 6 if seg['type'] == 'paragraph' else 8, text)
-        pdf.ln(2)
+        if seg['type'] == 'list':
+            text = f'- {text}'
+
+        line_h = 6.6 if seg['type'] == 'paragraph' else 7.2
+        pdf.multi_cell(0, line_h, text)
+        if seg['type'] == 'title':
+            pdf.ln(2.5)
+        else:
+            pdf.ln(1.4)
 
     buf = BytesIO()
     pdf.output(buf)
