@@ -1,0 +1,81 @@
+name: Smoke Tests
+
+on:
+  # Ejecuta en cada push a cualquier rama.
+  push:
+
+  # Ejecuta en cada pull request abierto/actualizado.
+  pull_request:
+
+  # Permite lanzar el workflow manualmente desde la UI de GitHub.
+  workflow_dispatch:
+
+jobs:
+  # Job 1: valida el modo single-instance (docker-compose.yml).
+  smoke-single:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      # Descarga el contenido del repositorio al runner.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Asegura que los scripts de testing sean ejecutables.
+      - name: Set execute permissions for test scripts
+        run: chmod +x testing/*.sh
+
+      # Ejecuta el smoke test single.
+      - name: Run single-instance smoke test
+        run: ./testing/smoke_single.sh
+
+      # Publica logs incluso si el test falla, para facilitar debugging.
+      - name: Upload single smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-single-logs
+          path: testing/logs/smoke-single-*.log
+          if-no-files-found: warn
+
+  # Job 2: valida el modo HA (docker-compose.ha.yml + HAProxy).
+  smoke-ha:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      # Descarga el contenido del repositorio al runner.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Asegura que los scripts de testing sean ejecutables.
+      - name: Set execute permissions for test scripts
+        run: chmod +x testing/*.sh
+
+      # Ejecuta el smoke test HA.
+      - name: Run HA smoke test
+        run: ./testing/smoke_ha.sh
+
+      # Publica logs incluso si el test falla, para facilitar debugging.
+      - name: Upload HA smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-ha-logs
+          path: testing/logs/smoke-ha-*.log
+          if-no-files-found: warn
+
+  # Job 3 (opcional de lectura): resumen textual al final.
+  # Este job depende de ambos; se ejecuta aunque fallen para dejar traza clara.
+  summary:
+    runs-on: ubuntu-latest
+    needs:
+      - smoke-single
+      - smoke-ha
+    if: always()
+
+    steps:
+      - name: Print workflow summary
+        run: |
+          echo "Smoke tests workflow finished."
+          echo "Check individual jobs and artifacts for details."
