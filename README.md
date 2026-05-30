@@ -62,24 +62,6 @@ docker compose up --build
 
 La aplicación estará disponible en `http://localhost:5000`.
 
-### Quickstart Single (usuario nuevo)
-
-Pasos minimos para levantar 1 sola instancia:
-
-```bash
-# 1) Clonar
-git clone https://github.com/tu-usuario/anonimizador.git
-cd anonimizador
-
-# 2) Crear .env y completar variables obligatorias
-cp .env.example .env
-# editar al menos: FLASK_SECRET_KEY y ADMIN_PASS
-# recomendado: OPENAI_API_KEY, OPENAI_BASE_URL, MODEL_NAME
-
-# 3) Levantar stack single (web + redis)
-docker compose up --build -d
-```
-
 Verificacion rapida:
 
 ```bash
