@@ -25,6 +25,11 @@ jobs:
       - name: Set execute permissions for test scripts
         run: chmod +x testing/*.sh
 
+      # Crea un .env temporal para CI a partir de la plantilla.
+      # El runner es efimero: este archivo solo vive durante el job.
+      - name: Create temporary .env for CI
+        run: cp .env.example .env
+
       # Ejecuta el smoke test single.
       - name: Run single-instance smoke test
         run: ./testing/smoke_single.sh
@@ -51,6 +56,11 @@ jobs:
       # Asegura que los scripts de testing sean ejecutables.
       - name: Set execute permissions for test scripts
         run: chmod +x testing/*.sh
+
+      # Crea un .env temporal para CI a partir de la plantilla.
+      # El runner es efimero: este archivo solo vive durante el job.
+      - name: Create temporary .env for CI
+        run: cp .env.example .env
 
       # Ejecuta el smoke test HA.
       - name: Run HA smoke test
