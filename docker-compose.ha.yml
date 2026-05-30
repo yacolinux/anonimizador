@@ -1,4 +1,23 @@
 services:
+  haproxy:
+    image: haproxy:2.9-alpine
+    depends_on:
+      web1:
+        condition: service_started
+      web2:
+        condition: service_started
+      web3:
+        condition: service_started
+      web4:
+        condition: service_started
+      web5:
+        condition: service_started
+    ports:
+      - "8081:80"
+      - "8404:8404"
+    volumes:
+      - ./haproxy.ha.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]

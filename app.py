@@ -68,7 +68,7 @@ def init_redis_client():
     try:
         client = redis.Redis.from_url(
             REDIS_URL,
-            decode_responses=True,
+            decode_responses=False,
             socket_connect_timeout=2,
             socket_timeout=2,
         )
@@ -277,6 +277,8 @@ def load_regex_config():
         try:
             raw = redis_client.get(REDIS_CONFIG_KEY)
             if raw:
+                if isinstance(raw, bytes):
+                    raw = raw.decode('utf-8')
                 data = json.loads(raw)
                 logger.info('Config regex cargada desde Redis')
                 return data

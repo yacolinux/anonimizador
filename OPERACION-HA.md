@@ -19,8 +19,10 @@ docker compose up --build -d
 docker compose -f docker-compose.ha.yml up --build -d
 ```
 
-- Levanta `redis` compartido + `web1..web5`.
+- Levanta `haproxy` + `redis` compartido + `web1..web5`.
 - `web6..web10` quedan comentadas para escalar.
+- Endpoint balanceado: `http://localhost:8081`.
+- Stats HAProxy: `http://localhost:8404/stats`.
 
 ## 2) Variables clave (`.env`)
 
@@ -45,15 +47,15 @@ docker compose -f docker-compose.ha.yml up --build -d
 
 ## 4) HAProxy: reglas recomendadas
 
-- Trafico publico (`/upload`, `/export`): backend `leastconn` + health `/ready`.
+- Trafico publico (`/upload`, `/export`): backend `leastconn` + health `/ready` + afinidad por IP para mantener el flujo upload/export en la misma instancia.
 - Trafico admin (`/admin/*`): backend sticky (`cookie SRV`).
 
-Referencia: `haproxy.cfg` y `HAPROXY.md`.
+Referencia: `haproxy.ha.cfg` (compose HA), `haproxy.cfg` (host) y `HAPROXY.md`.
 
 ## 5) Escalar de 5 a 10 instancias
 
 1. Descomentar `web6..web10` en `docker-compose.ha.yml`.
-2. Descomentar `a6..a10` en `haproxy.cfg`.
+2. Descomentar `a6..a10` en `haproxy.ha.cfg` (o `haproxy.cfg` si corre en host).
 3. Aplicar cambios:
 
 ```bash
@@ -73,7 +75,8 @@ docker compose -f docker-compose.ha.yml up --build -d
 
 ```bash
 curl -s http://localhost:5000/ready
-curl -s http://localhost:5001/ready
+curl -s http://localhost:8081/ready
+curl -s http://localhost:8404/stats
 ```
 
 Debe responder `ready=true` cuando la instancia esta libre y `503` cuando esta ocupada.

@@ -70,8 +70,9 @@ anonimizador/
 │   ├── style.css           # CSS con tema oscuro/claro
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, admin panel
 ├── docker-compose.yml      # Orquestación Docker
-├── docker-compose.ha.yml   # Pool HA: 5 instancias activas + 5 opcionales
-├── haproxy.cfg             # Config base de HAProxy (public + sticky admin)
+├── docker-compose.ha.yml   # Pool HA completo: haproxy + 5 instancias activas + redis
+├── haproxy.cfg             # Config base de HAProxy para correr en host
+├── haproxy.ha.cfg          # Config de HAProxy usada por docker-compose.ha.yml
 ├── HAPROXY.md              # Guía de balanceo
 ├── OPERACION-HA.md         # Runbook single + HA
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
@@ -140,7 +141,8 @@ El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el 
 
 ## HA (5 a 10 instancias)
 
-- `docker-compose.ha.yml` trae `web1..web5` activas por default (`5001..5005`)
+- `docker-compose.ha.yml` incluye `haproxy` dentro del stack (app en `localhost:8081`, stats en `localhost:8404/stats`)
+- `docker-compose.ha.yml` trae `web1..web5` activas por default (`5001..5005` para debug)
 - `docker-compose.ha.yml` incluye **un solo Redis** compartido para todas las instancias
 - `web6..web10` quedan comentadas para escalar a 10 sin rediseñar compose
 - Config y backend de HAProxy recomendados en `HAPROXY.md`

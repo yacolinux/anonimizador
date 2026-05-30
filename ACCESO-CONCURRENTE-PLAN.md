@@ -40,7 +40,7 @@
 
 ## Implementación por fases
 
-Estado actual: fase base implementada con `/ready`, `docker-compose.ha.yml` (5 activas + 5 opcionales), Redis compartido para sesión/rate-limit/config y guía operativa en `OPERACION-HA.md`.
+Estado actual: fase base implementada con `/ready`, `docker-compose.ha.yml` (haproxy + 5 activas + 5 opcionales), Redis compartido para sesión/rate-limit/config y guía operativa en `OPERACION-HA.md`.
 
 ### Fase 1 — Inmediata (sin infra nueva)
 

@@ -106,8 +106,9 @@ anonimizador/
 │   ├── style.css           # CSS con tema oscuro/claro + admin panel
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, copy, admin
 ├── docker-compose.yml      # Orquestación Docker
-├── docker-compose.ha.yml   # 5 instancias activas + 5 opcionales para HA
-├── haproxy.cfg             # Config base de HAProxy (public + sticky admin)
+├── docker-compose.ha.yml   # HA completo: haproxy + 5 instancias activas + redis
+├── haproxy.cfg             # Config base para HAProxy en host
+├── haproxy.ha.cfg          # Config para HAProxy dentro de Docker Compose HA
 ├── HAPROXY.md              # Guia de balanceo y health checks
 ├── OPERACION-HA.md         # Runbook single-instance + HA
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
@@ -228,21 +229,29 @@ El umbral se controla con `READY_MAX_INFLIGHT`.
 Configuración ejemplo y parámetros recomendados: `HAPROXY.md`.
 Runbook operativo (single + HA): `OPERACION-HA.md`.
 
-Además se incluye `docker-compose.ha.yml`:
+Además se incluye `docker-compose.ha.yml` listo para levantar HA end-to-end:
 
-- `web1..web5` activas por default (puertos `5001..5005`)
+- `haproxy` incluido en el mismo compose (app en `http://localhost:8081`, stats en `http://localhost:8404/stats`)
+- `web1..web5` activas por default (tambien expuestas en `5001..5005` para debug)
 - `web6..web10` comentadas para habilitar escalado a 10
 - `redis` único y compartido para sesión admin + rate limit + config distribuida
 
 Arquitectura recomendada en HA:
 
-- Público (`/upload`, `/export`): `leastconn` + `/ready`
+- Público (`/upload`, `/export`): `leastconn` + `/ready` + afinidad por IP para conservar archivos temporales del flujo upload/export
 - Admin (`/admin/*`): sticky sessions vía cookie de backend
 
 Levantar pool HA por default (5 instancias):
 
 ```bash
 docker compose -f docker-compose.ha.yml up --build -d
+```
+
+Probar endpoints del balanceador:
+
+```bash
+curl -s http://localhost:8081/ready
+curl -s http://localhost:8404/stats
 ```
 
 ---

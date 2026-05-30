@@ -26,9 +26,9 @@ La app ahora expone:
 
 - `READY_MAX_INFLIGHT` (default: `2`)
 
-## 2) Configuración HAProxy (ejemplo)
+## 2) Configuración HAProxy (host)
 
-También tenés una versión lista para usar en `haproxy.cfg`.
+Para correr HAProxy fuera de Docker, tenés una versión lista para usar en `haproxy.cfg`.
 
 ```haproxy
 global
@@ -110,10 +110,12 @@ backend be_anonimizador_admin
 
 ## 4) Compose para HA (5 activas, 10 preparadas)
 
-Se incluye `docker-compose.ha.yml`:
+Se incluye `docker-compose.ha.yml` con HAProxy integrado:
 
-- `web1..web5` activas por default (`5001..5005`)
+- `haproxy` en el mismo stack (app en `localhost:8081`, stats en `localhost:8404`)
+- `web1..web5` activas por default (`5001..5005` publicados para debug)
 - `web6..web10` comentadas (listas para habilitar)
+- `redis` compartido para sesiones/config/rate-limit
 
 Levantar 5 instancias:
 
@@ -121,10 +123,14 @@ Levantar 5 instancias:
 docker compose -f docker-compose.ha.yml up --build -d
 ```
 
+Config usada por ese servicio: `haproxy.ha.cfg`.
+
+Nota importante: el backend público usa afinidad por IP (`stick-table` + `stick on src`) para que el flujo `/upload` -> `/export` quede en la misma instancia y encuentre el archivo temporal.
+
 Escalar a 10 instancias:
 
 1. Descomentá `web6..web10` y volúmenes `uploads_data_6..10`
-2. Descomentá `server a6..a10` en HAProxy
+2. Descomentá `server a6..a10` en `haproxy.ha.cfg` (o en `haproxy.cfg` si usás HAProxy en host)
 3. Aplicá cambios:
 
 ```bash
@@ -147,4 +153,4 @@ Ejemplo conceptual (puertos diferentes):
 - instancia 4: `5004`
 - instancia 5: `5005`
 
-HAProxy escucha en `:80` y enruta según `/ready` + `leastconn`.
+Con compose HA, HAProxy escucha en `:8081` (host) y enruta según `/ready` + `leastconn`.
