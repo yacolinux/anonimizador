@@ -62,6 +62,37 @@ docker compose up --build
 
 La aplicación estará disponible en `http://localhost:5000`.
 
+### Quickstart Single (usuario nuevo)
+
+Pasos minimos para levantar 1 sola instancia:
+
+```bash
+# 1) Clonar
+git clone https://github.com/tu-usuario/anonimizador.git
+cd anonimizador
+
+# 2) Crear .env y completar variables obligatorias
+cp .env.example .env
+# editar al menos: FLASK_SECRET_KEY y ADMIN_PASS
+# recomendado: OPENAI_API_KEY, OPENAI_BASE_URL, MODEL_NAME
+
+# 3) Levantar stack single (web + redis)
+docker compose up --build -d
+```
+
+Verificacion rapida:
+
+```bash
+curl -s http://localhost:5000/ready
+```
+
+Si algo falla:
+
+```bash
+docker compose ps
+docker compose logs --tail=200 web redis
+```
+
 ### Variables de entorno
 
 | Variable | Descripción | Ejemplo |
@@ -246,6 +277,50 @@ Levantar pool HA por default (5 instancias):
 ```bash
 docker compose -f docker-compose.ha.yml up --build -d
 ```
+
+### Quickstart HA (usuario nuevo)
+
+Pasos minimos para que funcione al clonar el repo:
+
+```bash
+# 1) Clonar
+git clone https://github.com/tu-usuario/anonimizador.git
+cd anonimizador
+
+# 2) Crear .env y completar variables obligatorias
+cp .env.example .env
+# editar al menos: FLASK_SECRET_KEY y ADMIN_PASS
+# recomendado: OPENAI_API_KEY, OPENAI_BASE_URL, MODEL_NAME
+
+# 3) Levantar stack HA completo (haproxy + web1..web5 + redis)
+docker compose -f docker-compose.ha.yml up --build -d
+```
+
+Prechecks recomendados (puertos libres en host):
+
+- `8081` (app balanceada)
+- `8404` (stats HAProxy)
+- `6379` (Redis)
+- `5001..5005` (instancias web publicadas para debug)
+
+Verificacion rapida:
+
+```bash
+curl -s http://localhost:8081/ready
+curl -s http://localhost:8404/stats
+```
+
+Si algo falla:
+
+```bash
+docker compose -f docker-compose.ha.yml ps
+docker compose -f docker-compose.ha.yml logs --tail=200 haproxy web1 web2 web3 web4 web5 redis
+```
+
+Notas:
+
+- Si `8081` esta ocupado y queres `:80`, cambia el mapeo del servicio `haproxy` en `docker-compose.ha.yml` (por ejemplo `80:80`).
+- La afinidad por IP en HAProxy mantiene el flujo `/upload` -> `/export` en la misma instancia para encontrar el archivo temporal.
 
 Probar endpoints del balanceador:
 
