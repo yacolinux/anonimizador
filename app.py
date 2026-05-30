@@ -9,6 +9,8 @@ import unicodedata
 import subprocess
 import tempfile
 import threading
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 from io import BytesIO
 from functools import wraps
 from flask import session, g
@@ -48,6 +50,10 @@ LOGIN_WINDOW_SECONDS = int(os.environ.get('LOGIN_WINDOW_SECONDS', '300'))
 SESSION_BACKEND = os.environ.get('SESSION_BACKEND', 'redis').lower()
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 REDIS_CONFIG_KEY = os.environ.get('REDIS_CONFIG_KEY', 'anonimizador:config')
+LOCAL_INFERENCE_MAX = int(os.environ.get('LOCAL_INFERENCE_MAX', '3'))
+LOCAL_INFERENCE_WAIT_SECONDS = int(os.environ.get('LOCAL_INFERENCE_WAIT_SECONDS', '90'))
+LOCAL_INFERENCE_POLL_SECONDS = float(os.environ.get('LOCAL_INFERENCE_POLL_SECONDS', '1.5'))
+LOCAL_INFERENCE_SLOT_TTL_SECONDS = int(os.environ.get('LOCAL_INFERENCE_SLOT_TTL_SECONDS', '180'))
 
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
 
@@ -339,6 +345,83 @@ def get_current_base_url():
     return cfg['model_url'] or os.environ.get('OPENAI_BASE_URL', '')
 
 
+def is_local_model_provider():
+    model_url = (get_current_base_url() or '').strip().lower()
+    if not model_url:
+        return False
+    local_hosts = (
+        'localhost',
+        '127.0.0.1',
+        '0.0.0.0',
+        'host.docker.internal',
+        'ollama',
+    )
+    return any(host in model_url for host in local_hosts)
+
+
+def local_provider_healthcheck_url():
+    base = (get_current_base_url() or '').strip()
+    if not base:
+        return None
+    if '/api/' in base:
+        return base.rstrip('/')
+    return base.rstrip('/') + '/api/tags'
+
+
+def is_local_provider_available():
+    if not is_local_model_provider():
+        return True
+    target = local_provider_healthcheck_url()
+    if not target:
+        return False
+    try:
+        req = Request(target, method='GET')
+        with urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except (URLError, TimeoutError, ValueError):
+        return False
+
+
+def acquire_local_inference_slot(wait_seconds=None):
+    if not redis_available or not is_local_model_provider() or LOCAL_INFERENCE_MAX <= 0:
+        return None, None
+
+    token = str(uuid.uuid4())
+    wait_limit = LOCAL_INFERENCE_WAIT_SECONDS if wait_seconds is None else wait_seconds
+    deadline = time.time() + max(0, wait_limit)
+    slot_prefix = 'anonimizador:local_inference:slot'
+
+    while time.time() <= deadline:
+        for slot_num in range(1, LOCAL_INFERENCE_MAX + 1):
+            slot_key = f'{slot_prefix}:{slot_num}'
+            try:
+                ok = redis_client.set(
+                    slot_key,
+                    token,
+                    nx=True,
+                    ex=max(30, LOCAL_INFERENCE_SLOT_TTL_SECONDS),
+                )
+            except redis.RedisError:
+                logger.warning('Redis error tomando slot de inferencia local')
+                return None, None
+            if ok:
+                return slot_key, token
+        time.sleep(max(0.2, LOCAL_INFERENCE_POLL_SECONDS))
+
+    return None, token
+
+
+def release_local_inference_slot(slot_key, token):
+    if not redis_available or not slot_key or not token:
+        return
+    try:
+        val = redis_client.get(slot_key)
+        if val and val.decode('utf-8') == token:
+            redis_client.delete(slot_key)
+    except redis.RedisError:
+        logger.warning('Redis error liberando slot de inferencia local')
+
+
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -488,7 +571,7 @@ def parse_pii_from_output(raw_output):
     return []
 
 
-def call_opencode_for_pii(text):
+def call_opencode_for_pii(text, wait_seconds=None):
     model_id = get_model_id()
     prompt_template = get_opencode_prompt()
     prompt = prompt_template.replace('{text}', text)
@@ -508,6 +591,32 @@ def call_opencode_for_pii(text):
         tmp_path = f.name
 
     short_msg = 'Analiza el archivo adjunto y seguí las instrucciones'
+    queue_notice = None
+    slot_key = None
+    slot_token = None
+
+    if is_local_model_provider() and not is_local_provider_available():
+        queue_notice = 'Proveedor local no disponible en este momento.'
+        logger.warning(queue_notice)
+        return [], queue_notice, queue_notice, 'unavailable'
+
+    if is_local_model_provider() and redis_available and LOCAL_INFERENCE_MAX > 0:
+        logger.info(
+            'Proveedor local detectado. Intentando tomar slot de inferencia (max=%d)',
+            LOCAL_INFERENCE_MAX,
+        )
+        started_wait = time.time()
+        slot_key, slot_token = acquire_local_inference_slot(wait_seconds=wait_seconds)
+        waited = int(time.time() - started_wait)
+        if not slot_key:
+            queue_notice = (
+                'Proveedor local ocupado. No se obtuvo slot de inferencia dentro del tiempo de espera.'
+            )
+            logger.warning(queue_notice)
+            return [], queue_notice, queue_notice, 'busy'
+        if waited > 0:
+            queue_notice = f'Inferencia local en cola: espera aproximada {waited}s antes de procesar.'
+            logger.info(queue_notice)
 
     try:
         logger.info('Ejecutando opencode run --model opencode/%s', model_id)
@@ -531,21 +640,61 @@ def call_opencode_for_pii(text):
         parsed = parse_pii_from_output(full_output)
         if parsed:
             logger.info('PII detectadas por IA: %d keywords', len(parsed))
-            return parsed, full_output
+            return parsed, full_output, queue_notice, 'ok'
 
         logger.warning('No se pudo parsear JSON del output de opencode. Preview: %s', full_output[:220])
-        return [], full_output
+        return [], full_output, queue_notice, 'ok'
     except subprocess.TimeoutExpired:
         logger.error('Timeout al ejecutar opencode (120s)')
-        return [], 'Error: Timeout al ejecutar opencode'
+        return [], 'Error: Timeout al ejecutar opencode', queue_notice, 'timeout'
     except (json.JSONDecodeError, subprocess.CalledProcessError) as e:
         logger.error('Error ejecutando opencode: %s', e)
-        return [], f'Error: {str(e)}'
+        return [], f'Error: {str(e)}', queue_notice, 'error'
     finally:
+        release_local_inference_slot(slot_key, slot_token)
         try:
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+def run_detection_pipeline(segments, wait_seconds=None):
+    plaintext = segments_to_plaintext(segments)
+    logger.info('Texto plano: %d chars', len(plaintext))
+
+    pii_keywords, reasoning_output, queue_notice, ai_status = call_opencode_for_pii(
+        plaintext,
+        wait_seconds=wait_seconds,
+    )
+    logger.info('IA devolvió %d keywords (status=%s)', len(pii_keywords), ai_status)
+
+    default_keywords, default_positions = detect_default_pii(segments)
+    logger.info('Regex detectó %d keywords / %d posiciones', len(default_keywords), len(default_positions))
+
+    ai_positions = find_word_positions(segments, pii_keywords)
+    logger.info('Posiciones IA: %d', len(ai_positions))
+
+    seen_ranges = set()
+    merged_positions = []
+    for pos in default_positions + ai_positions:
+        key = (pos['segment'], pos['start'], pos['end'], pos['word'])
+        if key not in seen_ranges:
+            seen_ranges.add(key)
+            merged_positions.append(pos)
+
+    merged_positions.sort(key=lambda p: (p['segment'], p['start']))
+    logger.info('Total posiciones fusionadas: %d', len(merged_positions))
+
+    return {
+        'keywords': pii_keywords,
+        'default_keywords': default_keywords,
+        'positions': merged_positions,
+        'reasoning': reasoning_output,
+        'queue_notice': queue_notice,
+        'ai_status': ai_status,
+        'analysis_mode': 'full' if ai_status == 'ok' else 'regex_only',
+        'ai_positions': ai_positions,
+    }
 
 
 def normalize_text(text):
@@ -791,39 +940,51 @@ def upload():
         return jsonify({'error': 'Could not extract text from this document'}), 400
     logger.info('Texto extraído: %d segmentos', len(segments))
 
-    plaintext = segments_to_plaintext(segments)
-    logger.info('Texto plano: %d chars', len(plaintext))
-
-    pii_keywords, reasoning_output = call_opencode_for_pii(plaintext)
-    logger.info('IA devolvió %d keywords', len(pii_keywords))
-
-    default_keywords, default_positions = detect_default_pii(segments)
-    logger.info('Regex detectó %d keywords / %d posiciones', len(default_keywords), len(default_positions))
-
-    ai_positions = find_word_positions(segments, pii_keywords)
-    logger.info('Posiciones IA: %d', len(ai_positions))
-
-    seen_ranges = set()
-    merged_positions = []
-    for pos in default_positions + ai_positions:
-        key = (pos['segment'], pos['start'], pos['end'], pos['word'])
-        if key not in seen_ranges:
-            seen_ranges.add(key)
-            merged_positions.append(pos)
-
-    merged_positions.sort(key=lambda p: (p['segment'], p['start']))
-
-    logger.info('Total posiciones fusionadas: %d', len(merged_positions))
+    result = run_detection_pipeline(segments)
     logger.info('--- Upload completado ---')
 
     return jsonify({
         'filename': filename,
         'segments': segments,
-        'keywords': pii_keywords,
-        'default_keywords': default_keywords,
-        'positions': merged_positions,
-        'reasoning': reasoning_output
+        'keywords': result['keywords'],
+        'default_keywords': result['default_keywords'],
+        'positions': result['positions'],
+        'reasoning': result['reasoning'],
+        'queue_notice': result['queue_notice'],
+        'ai_status': result['ai_status'],
+        'analysis_mode': result['analysis_mode'],
     })
+
+
+@app.route('/reanalyze-ai', methods=['POST'])
+def reanalyze_ai():
+    cleanup_old_uploads()
+    data = request.get_json() or {}
+    filename = data.get('filename', '')
+    if not is_valid_upload_filename(filename):
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not is_path_inside_uploads(filepath) or not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
+
+    segments = extract_text(filepath)
+    if not segments:
+        return jsonify({'error': 'Could not extract text from this document'}), 400
+
+    result = run_detection_pipeline(segments, wait_seconds=0)
+    status_code = 202 if result['ai_status'] in ('busy', 'unavailable') else 200
+    return jsonify({
+        'filename': filename,
+        'keywords': result['keywords'],
+        'default_keywords': result['default_keywords'],
+        'positions': result['positions'],
+        'ai_positions': result['ai_positions'],
+        'reasoning': result['reasoning'],
+        'queue_notice': result['queue_notice'],
+        'ai_status': result['ai_status'],
+        'analysis_mode': result['analysis_mode'],
+    }), status_code
 
 
 @app.route('/uploads/<filename>')

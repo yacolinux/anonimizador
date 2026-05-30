@@ -94,6 +94,10 @@ docker compose logs --tail=200 web redis
 | `UPLOAD_TTL_SECONDS` | Tiempo de retención de uploads con PII (segundos) | `86400` |
 | `LOGIN_WINDOW_SECONDS` | Ventana de rate limit login admin (segundos) | `300` |
 | `LOGIN_MAX_ATTEMPTS` | Máximo de intentos de login por ventana | `5` |
+| `LOCAL_INFERENCE_MAX` | Máximo de inferencias simultáneas en proveedor local | `3` |
+| `LOCAL_INFERENCE_WAIT_SECONDS` | Espera máxima de slot local en `/upload` | `90` |
+| `LOCAL_INFERENCE_POLL_SECONDS` | Polling para tomar slot local | `1.5` |
+| `LOCAL_INFERENCE_SLOT_TTL_SECONDS` | TTL de seguridad del slot local en Redis | `180` |
 
 ### Sin Docker
 
@@ -145,6 +149,7 @@ anonimizador/
 |---|---|---|
 | `/` | GET | Frontend web |
 | `/upload` | POST | Subir PDF/DOCX (multipart `file`) |
+| `/reanalyze-ai` | POST | Reintentar analisis IA sobre upload existente (`{filename}`) |
 | `/export` | POST | Exportar documento anonimizado (JSON body) |
 | `/ready` | GET | Estado de disponibilidad para balanceadores (200 libre / 503 busy) |
 | `/admin/login` | POST | Login panel admin |
@@ -171,9 +176,16 @@ anonimizador/
   "positions": [
     {"segment": 1, "start": 12, "end": 22, "word": "Juan Pérez", "type": "nombre"}
   ],
-  "reasoning": "Output completo de la IA..."
+  "reasoning": "Output completo de la IA...",
+  "queue_notice": "Inferencia local en cola...",
+  "ai_status": "ok",
+  "analysis_mode": "full"
 }
 ```
+
+Valores posibles de `ai_status`: `ok`, `busy`, `unavailable`, `timeout`, `error`.
+
+Cuando `analysis_mode` es `regex_only`, el frontend habilita `Reintentar con IA` y usa `/reanalyze-ai` con polling cada 5s.
 
 #### `/export` request
 
@@ -242,6 +254,8 @@ El umbral se controla con `READY_MAX_INFLIGHT`.
 Configuración ejemplo y parámetros recomendados: `HAPROXY.md`.
 Runbook operativo (single + HA): `OPERACION-HA.md`.
 
+Si todas las instancias backend quedan no disponibles, HAProxy responde una pagina 503 personalizada (`haproxy-503.http`) con reintento automatico cada 10 segundos.
+
 Además se incluye `docker-compose.ha.yml` listo para levantar HA end-to-end:
 
 - `haproxy` incluido en el mismo compose (app en `http://localhost:8081`, stats en `http://localhost:8404/stats`)
@@ -303,6 +317,7 @@ Notas:
 
 - Si `8081` esta ocupado y queres `:80`, cambia el mapeo del servicio `haproxy` en `docker-compose.ha.yml` (por ejemplo `80:80`).
 - La afinidad por IP en HAProxy mantiene el flujo `/upload` -> `/export` en la misma instancia para encontrar el archivo temporal.
+- Para proveedor local (ej: Ollama), si no hay slot de inferencia, la UI muestra popup `Proveedor ocupado, en espera`, permite `Continuar sin IA` y deja disponible `Reintentar con IA`.
 
 Probar endpoints del balanceador:
 

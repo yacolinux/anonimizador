@@ -75,6 +75,21 @@
           <input type="text" id="replacement-text" value="[REDACTADO]">
         </div>
         <button id="reason-btn" class="reason-btn" disabled>Ver Razonamiento</button>
+        <button id="retry-ai-btn" class="reason-btn" hidden>Reintentar con IA</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ai-wait-modal" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Proveedor ocupado</h3>
+    </div>
+    <div class="ai-wait-body">
+      <p id="ai-wait-text">Proveedor ocupado, en espera. Reintentando...</p>
+      <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn-primary" id="continue-no-ai-btn">Continuar sin IA</button>
       </div>
     </div>
   </div>

@@ -28,8 +28,17 @@ const reasonModal = document.getElementById('reason-modal');
 const reasonContent = document.getElementById('reason-content');
 const reasonClose = document.getElementById('reason-close');
 const btnCopyText = document.getElementById('btn-copy-text');
+const retryAiBtn = document.getElementById('retry-ai-btn');
+const aiWaitModal = document.getElementById('ai-wait-modal');
+const aiWaitText = document.getElementById('ai-wait-text');
+const continueNoAiBtn = document.getElementById('continue-no-ai-btn');
 
 let currentReasoning = '';
+let aiRetryTimer = null;
+let aiRetryCancelled = false;
+
+const AI_RETRY_INTERVAL_MS = 5000;
+const AI_RETRY_MAX_WAIT_MS = 60000;
 
 function applyTheme(light) {
   document.body.classList.toggle('light-theme', light);
@@ -65,6 +74,7 @@ function showToast(msg) {
 }
 
 async function uploadFile(file) {
+  stopAiRetryLoop();
   const ext = file.name.split('.').pop().toLowerCase();
   if (!['pdf', 'docx'].includes(ext)) {
     showToast('Solo se admiten archivos PDF y DOCX');
@@ -84,6 +94,9 @@ async function uploadFile(file) {
       return;
     }
     currentData = data;
+    if (data.queue_notice) {
+      showToast(data.queue_notice);
+    }
     fileBadge.textContent = file.name;
     uploadProgress.hidden = true;
     mainLayout.hidden = false;
@@ -100,26 +113,108 @@ async function uploadFile(file) {
       exportHint.hidden = true;
     }
 
-    currentReasoning = data.reasoning || '';
-
-    allPositions = (data.positions || []).map(p => ({
-      segment: p.segment,
-      start: p.start,
-      end: p.end,
-      word: p.word,
-      type: p.type
-    }));
-    markedPositions = new Set(allPositions.map(p => key(p)));
-    manualMarked = new Set();
-
-    renderDocument(data.segments);
-    renderPiiList();
+    applyAnalysisResult(data, true);
+    if (data.ai_status && data.ai_status !== 'ok') {
+      retryAiBtn.hidden = false;
+      startAiRetryLoop();
+    } else {
+      retryAiBtn.hidden = true;
+    }
   } catch (err) {
     showToast('Error al subir el archivo');
     uploadContent.hidden = false;
     uploadProgress.hidden = true;
   }
 }
+
+function applyAnalysisResult(data, resetManual) {
+  currentReasoning = data.reasoning || '';
+  allPositions = (data.positions || []).map(p => ({
+    segment: p.segment,
+    start: p.start,
+    end: p.end,
+    word: p.word,
+    type: p.type
+  }));
+  markedPositions = new Set(allPositions.map(p => key(p)));
+  if (resetManual) {
+    manualMarked = new Set();
+  }
+  if (currentData && currentData.segments) {
+    renderDocument(currentData.segments);
+  }
+  renderPiiList();
+}
+
+function stopAiRetryLoop() {
+  if (aiRetryTimer) {
+    clearTimeout(aiRetryTimer);
+    aiRetryTimer = null;
+  }
+  aiWaitModal.hidden = true;
+}
+
+function startAiRetryLoop() {
+  if (!currentData || !currentData.filename) return;
+  aiRetryCancelled = false;
+  aiWaitModal.hidden = false;
+  const startedAt = Date.now();
+
+  const tick = async () => {
+    if (aiRetryCancelled) {
+      stopAiRetryLoop();
+      retryAiBtn.hidden = false;
+      showToast('Se continuo sin IA. Podes reintentar luego.');
+      return;
+    }
+
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    aiWaitText.textContent = `Proveedor ocupado, en espera. Reintentando cada 5s (${elapsed}s).`;
+
+    if (Date.now() - startedAt > AI_RETRY_MAX_WAIT_MS) {
+      stopAiRetryLoop();
+      retryAiBtn.hidden = false;
+      showToast('Tiempo maximo de espera alcanzado. Se continua sin IA.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/reanalyze-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: currentData.filename })
+      });
+      const data = await res.json();
+      if (data.queue_notice) showToast(data.queue_notice);
+      if (res.ok && data.ai_status === 'ok') {
+        stopAiRetryLoop();
+        currentData.keywords = data.keywords || [];
+        currentData.default_keywords = data.default_keywords || [];
+        currentData.positions = data.positions || [];
+        currentData.reasoning = data.reasoning || '';
+        applyAnalysisResult(currentData, false);
+        retryAiBtn.hidden = true;
+        showToast('Analisis IA completado correctamente');
+        return;
+      }
+    } catch (err) {
+      // retry silently
+    }
+
+    aiRetryTimer = setTimeout(tick, AI_RETRY_INTERVAL_MS);
+  };
+
+  tick();
+}
+
+continueNoAiBtn.addEventListener('click', () => {
+  aiRetryCancelled = true;
+});
+
+retryAiBtn.addEventListener('click', () => {
+  if (!currentData || !currentData.filename) return;
+  startAiRetryLoop();
+});
 
 function key(p) { return `${p.segment}:${p.start}:${p.end}`; }
 

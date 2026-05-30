@@ -116,6 +116,7 @@ Se incluye `docker-compose.ha.yml` con HAProxy integrado:
 - `web1..web5` activas por default (`5001..5005` publicados para debug)
 - `web6..web10` comentadas (listas para habilitar)
 - `redis` compartido para sesiones/config/rate-limit
+- pagina 503 custom (`haproxy-503.http`) con auto-refresh cada 10s cuando no hay backend disponible
 
 Levantar 5 instancias:
 

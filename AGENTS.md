@@ -36,6 +36,10 @@ cp .env.example .env
 | `UPLOAD_TTL_SECONDS` | Tiempo de retención de uploads con PII (segundos) | `86400` |
 | `LOGIN_WINDOW_SECONDS` | Ventana de rate limit login admin (segundos) | `300` |
 | `LOGIN_MAX_ATTEMPTS` | Máximo de intentos de login por ventana | `5` |
+| `LOCAL_INFERENCE_MAX` | Máximo de inferencias simultáneas en proveedor local | `3` |
+| `LOCAL_INFERENCE_WAIT_SECONDS` | Espera máxima para tomar slot local en `/upload` | `90` |
+| `LOCAL_INFERENCE_POLL_SECONDS` | Intervalo de polling para tomar slot local | `1.5` |
+| `LOCAL_INFERENCE_SLOT_TTL_SECONDS` | TTL de seguridad de slot local en Redis | `180` |
 
 ## API
 
@@ -44,7 +48,8 @@ cp .env.example .env
 | Endpoint | Método | Descripción |
 |---|---|---|
 | `/` | GET | Frontend web |
-| `/upload` | POST | Subir PDF/DOCX (multipart `file`). Retorna `{segments, keywords, default_keywords, positions, reasoning}` |
+| `/upload` | POST | Subir PDF/DOCX (multipart `file`). Retorna `{segments, keywords, default_keywords, positions, reasoning, queue_notice, ai_status, analysis_mode}` |
+| `/reanalyze-ai` | POST | Reintentar IA sobre archivo ya subido. Body: `{filename}` |
 | `/export` | POST | Exportar anonimizado. Body JSON: `{filename, keywords[{word,type}], format:docx\|pdf, replacement}` |
 | `/ready` | GET | Health de disponibilidad para HAProxy. Retorna `200` si libre y `503` si busy |
 
@@ -73,6 +78,7 @@ anonimizador/
 ├── docker-compose.ha.yml   # Pool HA completo: haproxy + 5 instancias activas + redis
 ├── haproxy.cfg             # Config base de HAProxy para correr en host
 ├── haproxy.ha.cfg          # Config de HAProxy usada por docker-compose.ha.yml
+├── haproxy-503.http        # Pagina 503 con auto-reintento cada 10s
 ├── HAPROXY.md              # Guía de balanceo
 ├── OPERACION-HA.md         # Runbook single + HA
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
@@ -88,6 +94,7 @@ anonimizador/
 - **Extracción de texto**: `pdfplumber` para PDF, `python-docx` para DOCX
 - **Detección PII por regex**: `detect_default_pii()` lee patrones desde `regex_patterns.json`
 - **Detección PII por IA**: `call_opencode_for_pii()` ejecuta `opencode run` como subprocess (timeout 120s)
+- **Proveedor local**: healthcheck HTTP + semáforo Redis global para concurrencia de inferencias
 - **Normalización Unicode**: `normalize_text()` usa NFKD + elimina combining marks
 - **Export DOCX**: modifica `runs` del documento original, marca en rojo bold
 - **Export PDF**: usa `fpdf2` con DejaVuSans, fallback a Helvetica
@@ -101,6 +108,7 @@ anonimizador/
 - **Panel lateral**: lista de PII agrupadas, checkbox "marcar todas", agregar palabras manualmente
 - **Botón "Copiar Texto Anonimizado"**: copia el texto con reemplazos al portapapeles
 - **Botón "Ver Razonamiento"**: modal con output completo de la IA
+- **Flujo IA local ocupada**: popup "Proveedor ocupado", reintento cada 5s, botón "Continuar sin IA" y botón "Reintentar con IA"
 - **Panel admin**: botón discreto ⚙ en esquina inferior izquierda, login → tabs (Prompt, Patrones Regex, Elegir Modelo)
 
 ## Detección de PII

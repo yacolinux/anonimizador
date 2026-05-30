@@ -1,0 +1,32 @@
+HTTP/1.1 503 Service Unavailable
+Cache-Control: no-cache
+Connection: close
+Content-Type: text/html; charset=utf-8
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="10">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>En espera de Anonimizador</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; }
+    .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { width: min(640px, 92vw); background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 28px; }
+    h1 { margin: 0 0 12px; font-size: 26px; }
+    p { margin: 8px 0; line-height: 1.5; }
+    .muted { color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>En espera de Anonimizador</h1>
+      <p>Todas las instancias estan ocupadas o no disponibles en este momento.</p>
+      <p>La pagina se va a reintentar automaticamente cada 10 segundos.</p>
+      <p class="muted">Si el problema persiste, intenta nuevamente en unos minutos.</p>
+    </div>
+  </div>
+</body>
+</html>

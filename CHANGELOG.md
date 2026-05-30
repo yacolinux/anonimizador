@@ -6,10 +6,14 @@
 - HAProxy integrado en `docker-compose.ha.yml` para levantar stack HA completo en un solo comando.
 - Nueva config `haproxy.ha.cfg` para backend Docker (`web1..web5`) con healthcheck sobre `/ready`.
 - Endpoint de app balanceada en `http://localhost:8081` y stats en `http://localhost:8404/stats`.
+- Endpoint `POST /reanalyze-ai` para reintento de IA sobre archivo ya subido.
+- Pagina 503 custom `haproxy-503.http` con auto-reintento cada 10 segundos.
 
 ### Changed
 - Balanceo publico ajustado a `leastconn` + afinidad por IP (`stick-table` + `stick on src`) para mantener el flujo `/upload` -> `/export` en la misma instancia.
 - Se mantiene sticky por cookie para rutas admin (`/admin/*`).
+- Flujo IA local: healthcheck HTTP del proveedor + semaforo Redis de concurrencia + estados `ai_status`/`analysis_mode` + `queue_notice`.
+- Frontend: popup `Proveedor ocupado` con reintento cada 5s, `Continuar sin IA` y `Reintentar con IA`.
 - Documentacion actualizada para reflejar arquitectura y operacion HA actual:
   - `README.md`
   - `HAPROXY.md`

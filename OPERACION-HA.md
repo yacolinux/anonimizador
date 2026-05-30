@@ -34,6 +34,10 @@ docker compose -f docker-compose.ha.yml up --build -d
 - `UPLOAD_TTL_SECONDS=86400`
 - `LOGIN_WINDOW_SECONDS=300`
 - `LOGIN_MAX_ATTEMPTS=5`
+- `LOCAL_INFERENCE_MAX=3`
+- `LOCAL_INFERENCE_WAIT_SECONDS=90`
+- `LOCAL_INFERENCE_POLL_SECONDS=1.5`
+- `LOCAL_INFERENCE_SLOT_TTL_SECONDS=180`
 
 ## 3) Redis: cuando usar cada backend de sesion
 
@@ -49,6 +53,7 @@ docker compose -f docker-compose.ha.yml up --build -d
 
 - Trafico publico (`/upload`, `/export`): backend `leastconn` + health `/ready` + afinidad por IP para mantener el flujo upload/export en la misma instancia.
 - Trafico admin (`/admin/*`): backend sticky (`cookie SRV`).
+- Si no hay backends disponibles, HAProxy entrega pagina 503 custom con reintento automatico cada 10s (`haproxy-503.http`).
 
 Referencia: `haproxy.ha.cfg` (compose HA), `haproxy.cfg` (host) y `HAPROXY.md`.
 

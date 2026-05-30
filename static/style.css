@@ -148,6 +148,11 @@ body {
   background: var(--hover-bg);
 }
 
+.ai-wait-body {
+  padding: 12px 0;
+  color: var(--text-body);
+}
+
 .upload-area {
   background: var(--upload-bg);
   border: 2px dashed var(--upload-border);

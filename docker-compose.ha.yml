@@ -17,6 +17,7 @@ services:
       - "8404:8404"
     volumes:
       - ./haproxy.ha.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./haproxy-503.http:/usr/local/etc/haproxy/errors/503-anonimizador.http:ro
 
   redis:
     image: redis:7-alpine
