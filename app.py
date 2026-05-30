@@ -3,6 +3,8 @@ import os
 import re
 import json
 import uuid
+import hmac
+import time
 import unicodedata
 import subprocess
 import tempfile
@@ -10,6 +12,8 @@ import threading
 from io import BytesIO
 from functools import wraps
 from flask import session, g
+from flask_session import Session
+import redis
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,22 +33,164 @@ from flask import (
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = '/app/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-prod')
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY')
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '0') == '1'
 
 MODEL_NAME = os.environ.get('MODEL_NAME', 'qwen/qwen3-30b-a3b')
 ADMIN_USER = os.environ.get('ADMIN_USER', 'adminanon')
-ADMIN_PASS = os.environ.get('ADMIN_PASS', 'IJGNF678')
+ADMIN_PASS = os.environ.get('ADMIN_PASS')
 READY_MAX_INFLIGHT = int(os.environ.get('READY_MAX_INFLIGHT', '2'))
+UPLOAD_TTL_SECONDS = int(os.environ.get('UPLOAD_TTL_SECONDS', str(24 * 3600)))
+LOGIN_MAX_ATTEMPTS = int(os.environ.get('LOGIN_MAX_ATTEMPTS', '5'))
+LOGIN_WINDOW_SECONDS = int(os.environ.get('LOGIN_WINDOW_SECONDS', '300'))
+SESSION_BACKEND = os.environ.get('SESSION_BACKEND', 'redis').lower()
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+REDIS_CONFIG_KEY = os.environ.get('REDIS_CONFIG_KEY', 'anonimizador:config')
 
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 REGEX_PATTERNS_FILE = '/app/regex_patterns.json'
-MODEL_CONFIG_FILE = '/app/model_config.json'
 
 _inflight_lock = threading.Lock()
 _inflight_requests = 0
+_login_attempts = {}
+redis_client = None
+redis_available = False
+session_ext = Session()
+
+
+def init_redis_client():
+    global redis_client, redis_available
+    try:
+        client = redis.Redis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        client.ping()
+        redis_client = client
+        redis_available = True
+        logger.info('Redis conectado en %s', REDIS_URL)
+    except redis.RedisError as e:
+        redis_available = False
+        redis_client = None
+        logger.warning('Redis no disponible (%s). Se usa fallback local.', e)
+
+
+def configure_session_backend():
+    if SESSION_BACKEND == 'redis' and redis_available:
+        app.config['SESSION_TYPE'] = 'redis'
+        app.config['SESSION_REDIS'] = redis_client
+        app.config['SESSION_PERMANENT'] = False
+        app.config['SESSION_USE_SIGNER'] = True
+        session_ext.init_app(app)
+        logger.info('Sesiones configuradas en Redis')
+    else:
+        logger.info('Sesiones en cookie (backend local)')
+
+
+def bootstrap_config_in_redis():
+    if not redis_available:
+        return
+    try:
+        existing = redis_client.get(REDIS_CONFIG_KEY)
+        if existing:
+            return
+        try:
+            with open(REGEX_PATTERNS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = DEFAULT_PATTERNS_DATA
+        redis_client.set(REDIS_CONFIG_KEY, json.dumps(data, ensure_ascii=False))
+        logger.info('Config inicial cargada en Redis')
+    except redis.RedisError:
+        logger.warning('No se pudo bootstrapear config en Redis')
+
+
+def validate_required_env():
+    required = []
+    if not app.config.get('SECRET_KEY'):
+        required.append('FLASK_SECRET_KEY')
+    if not ADMIN_PASS:
+        required.append('ADMIN_PASS')
+    if required:
+        raise RuntimeError(
+            f"Missing required environment variables: {', '.join(required)}"
+        )
+
+
+def cleanup_old_uploads():
+    cutoff = time.time() - UPLOAD_TTL_SECONDS
+    upload_dir = app.config['UPLOAD_FOLDER']
+    try:
+        for name in os.listdir(upload_dir):
+            path = os.path.join(upload_dir, name)
+            if not os.path.isfile(path):
+                continue
+            if os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+    except OSError:
+        logger.warning('No se pudo ejecutar limpieza de uploads antiguos')
+
+
+def is_valid_upload_filename(filename):
+    return bool(re.fullmatch(r'[0-9a-fA-F-]{36}\.(pdf|docx)', filename or ''))
+
+
+def is_path_inside_uploads(path):
+    upload_root = os.path.realpath(app.config['UPLOAD_FOLDER'])
+    target = os.path.realpath(path)
+    return target.startswith(upload_root + os.sep)
+
+
+def _prune_login_attempts(now):
+    stale = [ip for ip, ts in _login_attempts.items() if now - ts[-1] > LOGIN_WINDOW_SECONDS]
+    for ip in stale:
+        _login_attempts.pop(ip, None)
+
+
+def is_login_rate_limited(ip):
+    if redis_available:
+        key = f'anonimizador:login:{ip}'
+        try:
+            count = redis_client.get(key)
+            return int(count or 0) >= LOGIN_MAX_ATTEMPTS
+        except redis.RedisError:
+            pass
+    now = time.time()
+    _prune_login_attempts(now)
+    attempts = _login_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t <= LOGIN_WINDOW_SECONDS]
+    _login_attempts[ip] = attempts
+    return len(attempts) >= LOGIN_MAX_ATTEMPTS
+
+
+def register_login_failure(ip):
+    if redis_available:
+        key = f'anonimizador:login:{ip}'
+        try:
+            pipe = redis_client.pipeline()
+            pipe.incr(key)
+            pipe.expire(key, LOGIN_WINDOW_SECONDS)
+            pipe.execute()
+            return
+        except redis.RedisError:
+            pass
+    now = time.time()
+    attempts = _login_attempts.get(ip, [])
+    attempts.append(now)
+    _login_attempts[ip] = attempts
+
+
+validate_required_env()
+init_redis_client()
+configure_session_backend()
+bootstrap_config_in_redis()
 
 
 def _inc_inflight():
@@ -127,6 +273,15 @@ DEFAULT_PATTERNS_DATA = {
 
 
 def load_regex_config():
+    if redis_available:
+        try:
+            raw = redis_client.get(REDIS_CONFIG_KEY)
+            if raw:
+                data = json.loads(raw)
+                logger.info('Config regex cargada desde Redis')
+                return data
+        except (redis.RedisError, json.JSONDecodeError):
+            logger.warning('No se pudo leer config desde Redis, usando fallback')
     try:
         with open(REGEX_PATTERNS_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -153,6 +308,12 @@ def save_regex_config(patterns, prompt, model_url=None, model_name=None):
         data["model_url"] = model_url
     if model_name is not None:
         data["model_name"] = model_name
+    if redis_available:
+        try:
+            redis_client.set(REDIS_CONFIG_KEY, json.dumps(data, ensure_ascii=False))
+            logger.info('Config regex guardada en Redis (%d patrones)', len(patterns))
+        except redis.RedisError:
+            logger.warning('No se pudo guardar config en Redis, guardando solo en archivo')
     with open(REGEX_PATTERNS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     logger.info('Config regex guardada (%d patrones)', len(patterns))
@@ -390,17 +551,6 @@ def normalize_text(text):
     return ''.join(c for c in nfkd if not unicodedata.combining(c))
 
 
-DEFAULT_PII_PATTERNS = [
-    (r'\b\d{1,2}\.?\d{3}\.?\d{3}\b', 'dni_argentino'),
-    (r'\b\d{1,2}\.\d{3}\.\d{3}\b', 'dni_argentino'),
-    (r'\b\d{7,8}\b', 'dni_argentino'),
-    (r'(?:calle|av\.|avenida|domicilio|direcci[oó]n|pasaje|b[oó]u?le?vard|ruta|camino)\s+[a-záéíóúñ\s]+\d+', 'direccion'),
-    (r'\d+\s*(?:años|anios|años de edad)', 'edad'),
-    (r'\b(?:masculino|femenino|var[oó]n|mujer|hombre|femenina|masculina)\b', 'sexo'),
-    (r'(?:paciente|nombre|apellido|señor|señora|sr[a]?\.?)\s*:?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+', 'nombre'),
-]
-
-
 def detect_default_pii(segments):
     default_keywords_set = {}
     positions = []
@@ -620,6 +770,7 @@ def ready():
 @app.route('/upload', methods=['POST'])
 def upload():
     logger.info('--- Nuevo upload ---')
+    cleanup_old_uploads()
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     file = request.files['file']
@@ -681,6 +832,7 @@ def uploaded_file(filename):
 @app.route('/export', methods=['POST'])
 def export():
     logger.info('--- Export solicitado ---')
+    cleanup_old_uploads()
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -693,7 +845,12 @@ def export():
     if not filename:
         return jsonify({'error': 'No filename provided'}), 400
 
+    if not is_valid_upload_filename(filename):
+        return jsonify({'error': 'Invalid filename'}), 400
+
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not is_path_inside_uploads(filepath):
+        return jsonify({'error': 'Invalid path'}), 400
     if not os.path.exists(filepath):
         return jsonify({'error': 'File not found'}), 404
 
@@ -745,12 +902,21 @@ def admin_login():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+    if is_login_rate_limited(ip):
+        return jsonify({'error': 'Too many attempts. Try again later.'}), 429
     user = data.get('user', '')
     password = data.get('password', '')
-    if user == ADMIN_USER and password == ADMIN_PASS:
+    if hmac.compare_digest(str(user), str(ADMIN_USER)) and hmac.compare_digest(str(password), str(ADMIN_PASS)):
         session['admin_logged_in'] = True
+        if redis_available:
+            try:
+                redis_client.delete(f'anonimizador:login:{ip}')
+            except redis.RedisError:
+                pass
         logger.info('Admin login exitoso')
         return jsonify({'ok': True})
+    register_login_failure(ip)
     logger.warning('Intento de login admin fallido')
     return jsonify({'error': 'Credenciales inválidas'}), 401
 
@@ -798,4 +964,4 @@ def admin_save_config():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)

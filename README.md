@@ -71,9 +71,16 @@ La aplicación estará disponible en `http://localhost:5000`.
 | `MODEL_NAME` | Modelo a usar (formato provider/modelo) | `opencode/deepseek-v4-flash-free` |
 | `FLASK_PORT` | Puerto del servidor | `5000` |
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
-| `ADMIN_PASS` | Contraseña del panel admin | `IJGNF678` |
+| `ADMIN_PASS` | Contraseña del panel admin | `cambiar-esta-clave` |
 | `FLASK_SECRET_KEY` | Secret key para sesiones Flask | `cualquier-string-seguro` |
+| `SESSION_COOKIE_SECURE` | Cookie segura de sesión (HTTPS) | `1` |
+| `SESSION_BACKEND` | Backend de sesiones (`redis` o `cookie`) | `redis` |
+| `REDIS_URL` | URL de Redis compartido (single/HA) | `redis://redis:6379/0` |
+| `REDIS_CONFIG_KEY` | Key Redis para config compartida | `anonimizador:config` |
 | `READY_MAX_INFLIGHT` | Umbral de requests concurrentes para marcar busy en `/ready` | `2` |
+| `UPLOAD_TTL_SECONDS` | Tiempo de retención de uploads con PII (segundos) | `86400` |
+| `LOGIN_WINDOW_SECONDS` | Ventana de rate limit login admin (segundos) | `300` |
+| `LOGIN_MAX_ATTEMPTS` | Máximo de intentos de login por ventana | `5` |
 
 ### Sin Docker
 
@@ -100,6 +107,9 @@ anonimizador/
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, copy, admin
 ├── docker-compose.yml      # Orquestación Docker
 ├── docker-compose.ha.yml   # 5 instancias activas + 5 opcionales para HA
+├── haproxy.cfg             # Config base de HAProxy (public + sticky admin)
+├── HAPROXY.md              # Guia de balanceo y health checks
+├── OPERACION-HA.md         # Runbook single-instance + HA
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 ├── .env                    # Configuración sensible
@@ -192,7 +202,7 @@ Acceso: botón ⚙ en la esquina inferior izquierda.
 
 Configurables en `.env`:
 - `ADMIN_USER=adminanon`
-- `ADMIN_PASS=IJGNF678`
+- `ADMIN_PASS=cambiar-esta-clave`
 
 ### Tabs
 
@@ -216,11 +226,18 @@ La app expone `GET /ready` para integración con HAProxy o balanceadores similar
 El umbral se controla con `READY_MAX_INFLIGHT`.
 
 Configuración ejemplo y parámetros recomendados: `HAPROXY.md`.
+Runbook operativo (single + HA): `OPERACION-HA.md`.
 
 Además se incluye `docker-compose.ha.yml`:
 
 - `web1..web5` activas por default (puertos `5001..5005`)
 - `web6..web10` comentadas para habilitar escalado a 10
+- `redis` único y compartido para sesión admin + rate limit + config distribuida
+
+Arquitectura recomendada en HA:
+
+- Público (`/upload`, `/export`): `leastconn` + `/ready`
+- Admin (`/admin/*`): sticky sessions vía cookie de backend
 
 Levantar pool HA por default (5 instancias):
 
@@ -258,7 +275,7 @@ print(json.dumps({'filename': r['filename'], 'keywords': kw, 'format': 'docx'}))
 
 # Probar panel admin
 curl -s -c /tmp/cookies.txt -X POST -H 'Content-Type: application/json' \
-  -d '{"user":"adminanon","password":"IJGNF678"}' http://localhost:5000/admin/login
+  -d '{"user":"adminanon","password":"cambiar-esta-clave"}' http://localhost:5000/admin/login
 curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json.tool
 ```
 

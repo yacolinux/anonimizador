@@ -1,4 +1,17 @@
 services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis_data:/data
+
   web1:
     build: .
     ports:
@@ -9,6 +22,11 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
       - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+      - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - uploads_data_1:/app/uploads
 
@@ -22,6 +40,11 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
       - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+      - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - uploads_data_2:/app/uploads
 
@@ -35,6 +58,11 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
       - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+      - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - uploads_data_3:/app/uploads
 
@@ -48,6 +76,11 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
       - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+      - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - uploads_data_4:/app/uploads
 
@@ -61,6 +94,11 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
       - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+      - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - uploads_data_5:/app/uploads
 
@@ -75,6 +113,11 @@ services:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
   #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #     - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+  #     - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
   #   volumes:
   #     - uploads_data_6:/app/uploads
 
@@ -88,6 +131,11 @@ services:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
   #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #     - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+  #     - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
   #   volumes:
   #     - uploads_data_7:/app/uploads
 
@@ -101,6 +149,11 @@ services:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
   #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #     - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+  #     - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
   #   volumes:
   #     - uploads_data_8:/app/uploads
 
@@ -114,6 +167,11 @@ services:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
   #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #     - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+  #     - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
   #   volumes:
   #     - uploads_data_9:/app/uploads
 
@@ -127,10 +185,16 @@ services:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
   #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #     - SESSION_BACKEND=${SESSION_BACKEND:-redis}
+  #     - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
   #   volumes:
   #     - uploads_data_10:/app/uploads
 
 volumes:
+  redis_data:
   uploads_data_1:
   uploads_data_2:
   uploads_data_3:

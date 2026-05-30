@@ -2,6 +2,8 @@
 
 Guía práctica para distribuir carga entre 5-10 instancias de Anonimizador y evitar enviar tráfico a instancias ocupadas.
 
+Para operación completa (single + HA), ver `OPERACION-HA.md`.
+
 ## 1) Endpoint `/ready`
 
 La app ahora expone:
@@ -82,6 +84,30 @@ Para empezar con 5 instancias (y escalar luego a 10):
   - `maxconn 25` por server (ajustar según CPU/RAM)
   - `timeout queue 20s`
 
+### Sticky sessions para `/admin/*`
+
+Aunque el flujo público no requiere afinidad, conviene mantener sticky para panel admin:
+
+```haproxy
+frontend fe_anonimizador
+    bind *:80
+    acl is_admin path_beg /admin
+    use_backend be_anonimizador_admin if is_admin
+    default_backend be_anonimizador
+
+backend be_anonimizador_admin
+    balance roundrobin
+    cookie SRV insert indirect nocache
+    option httpchk GET /ready
+    http-check expect status 200
+
+    server a1 127.0.0.1:5001 check cookie a1
+    server a2 127.0.0.1:5002 check cookie a2
+    server a3 127.0.0.1:5003 check cookie a3
+    server a4 127.0.0.1:5004 check cookie a4
+    server a5 127.0.0.1:5005 check cookie a5
+```
+
 ## 4) Compose para HA (5 activas, 10 preparadas)
 
 Se incluye `docker-compose.ha.yml`:
@@ -108,12 +134,8 @@ docker compose -f docker-compose.ha.yml up --build -d
 ## 5) Recomendaciones operativas
 
 - Usar la misma `FLASK_SECRET_KEY` en todas las instancias.
-- Si el panel admin usa sesión y pasás por múltiples instancias:
-  - ideal: storage de sesión compartido (Redis), o
-  - sticky sessions en HAProxy.
-- `regex_patterns.json` hoy es archivo local por instancia; para consistencia real en HA:
-  - mover config a DB/Redis compartida, o
-  - montar volumen compartido.
+- Mantener sticky para `/admin/*` (afinidad de panel) aunque exista sesión compartida.
+- Con `SESSION_BACKEND=redis` + `REDIS_URL` todas las instancias comparten sesión/rate-limit/config.
 
 ## 6) Deploy rápido de 5 instancias
 

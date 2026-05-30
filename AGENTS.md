@@ -26,9 +26,16 @@ cp .env.example .env
 | `MODEL_NAME` | Modelo a usar (formato provider/modelo) | `opencode/deepseek-v4-flash-free` |
 | `FLASK_PORT` | Puerto del servidor | `5000` |
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
-| `ADMIN_PASS` | Contraseña del panel admin | `IJGNF678` |
+| `ADMIN_PASS` | Contraseña del panel admin | `cambiar-esta-clave` |
 | `FLASK_SECRET_KEY` | Secret key para sesiones Flask | `cualquier-string-seguro` |
+| `SESSION_COOKIE_SECURE` | Marca cookie de sesión como segura (HTTPS) | `1` |
 | `READY_MAX_INFLIGHT` | Umbral de requests concurrentes para marcar busy en `/ready` | `2` |
+| `SESSION_BACKEND` | Backend de sesiones (`redis` o `cookie`) | `redis` |
+| `REDIS_URL` | URL de Redis compartido (single/HA) | `redis://redis:6379/0` |
+| `REDIS_CONFIG_KEY` | Key Redis para config compartida | `anonimizador:config` |
+| `UPLOAD_TTL_SECONDS` | Tiempo de retención de uploads con PII (segundos) | `86400` |
+| `LOGIN_WINDOW_SECONDS` | Ventana de rate limit login admin (segundos) | `300` |
+| `LOGIN_MAX_ATTEMPTS` | Máximo de intentos de login por ventana | `5` |
 
 ## API
 
@@ -64,6 +71,9 @@ anonimizador/
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, admin panel
 ├── docker-compose.yml      # Orquestación Docker
 ├── docker-compose.ha.yml   # Pool HA: 5 instancias activas + 5 opcionales
+├── haproxy.cfg             # Config base de HAProxy (public + sticky admin)
+├── HAPROXY.md              # Guía de balanceo
+├── OPERACION-HA.md         # Runbook single + HA
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 └── .env                    # Configuración sensible
@@ -72,6 +82,7 @@ anonimizador/
 ### Componentes backend (`app.py`)
 
 - **Flask app** con gunicorn (2 workers, timeout 180s)
+- **Redis opcional/compartido** para sesiones admin, rate limit y config distribuida
 - **Endpoint `/ready`** para balanceo: reporta estado de ocupación por requests en vuelo (`inflight`)
 - **Extracción de texto**: `pdfplumber` para PDF, `python-docx` para DOCX
 - **Detección PII por regex**: `detect_default_pii()` lee patrones desde `regex_patterns.json`
@@ -125,12 +136,15 @@ El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el 
 - **Subida máxima**: 50MB
 - **Auth opencode**: `entrypoint.sh` escribe `~/.local/share/opencode/auth.json` si `OPENAI_API_KEY` está definida
 - **HA / balanceo**: endpoint `/ready` + `READY_MAX_INFLIGHT` para que HAProxy enrute sólo a instancias libres
+- **Sticky admin**: mantener afinidad `/admin/*` en HAProxy
 
 ## HA (5 a 10 instancias)
 
 - `docker-compose.ha.yml` trae `web1..web5` activas por default (`5001..5005`)
+- `docker-compose.ha.yml` incluye **un solo Redis** compartido para todas las instancias
 - `web6..web10` quedan comentadas para escalar a 10 sin rediseñar compose
 - Config y backend de HAProxy recomendados en `HAPROXY.md`
+- Operación paso a paso: `OPERACION-HA.md`
 
 ## Pruebas
 
@@ -158,7 +172,7 @@ print(json.dumps({'filename': r['filename'], 'keywords': kw, 'format': 'docx'}))
 
 # Test admin login
 curl -s -c /tmp/cookies.txt -X POST -H 'Content-Type: application/json' \
-  -d '{"user":"adminanon","password":"IJGNF678"}' http://localhost:5000/admin/login
+  -d '{"user":"adminanon","password":"cambiar-esta-clave"}' http://localhost:5000/admin/login
 
 # Test admin config
 curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json.tool
