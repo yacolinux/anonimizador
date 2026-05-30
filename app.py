@@ -192,6 +192,15 @@ def extract_text_docx(filepath):
         else:
             seg_type = 'paragraph'
         segments.append({'type': seg_type, 'text': text})
+    for table in doc.tables:
+        for row in table.rows:
+            row_texts = []
+            for cell in row.cells:
+                cell_text = ' '.join(p.text.strip() for p in cell.paragraphs if p.text.strip())
+                if cell_text:
+                    row_texts.append(cell_text)
+            if row_texts:
+                segments.append({'type': 'paragraph', 'text': ' | '.join(row_texts)})
     return segments
 
 
@@ -221,8 +230,8 @@ def call_opencode_for_pii(text):
 
     combined_input = (
         "INSTRUCCIONES:\n" + prompt + "\n\n"
-        "---\n\n"
-        "TEXTO DEL DOCUMENTO:\n" + text
+        "NO HAGAS PREGUNTAS. NO SUGIERAS ACCIONES. Solo devolvé el JSON con "
+        "los datos detectados. No escribas nada más que el JSON."
     )
 
     logger.info('Enviando texto a opencode (%d chars)', len(text))
@@ -382,13 +391,55 @@ def replace_normalized(text, kw_word, replacement):
 
 def anonymize_docx(filepath, keywords, replacement='[REDACTED]'):
     doc = Document(filepath)
-    for para in doc.paragraphs:
-        for run in para.runs:
+
+    def anonymize_paragraphs(paragraphs):
+        for para in paragraphs:
+            full_text = para.text
+            norm_full = normalize_text(full_text).lower()
+            replacements = []
             for kw in keywords:
-                if normalize_text(kw['word']).lower() in normalize_text(run.text).lower():
-                    run.text = replace_normalized(run.text, kw['word'], replacement)
+                norm_kw = normalize_text(kw['word']).lower()
+                start = 0
+                while True:
+                    idx = norm_full.find(norm_kw, start)
+                    if idx == -1:
+                        break
+                    replacements.append({
+                        'start': idx,
+                        'end': idx + len(kw['word']),
+                        'replacement': replacement
+                    })
+                    start = idx + 1
+            if not replacements:
+                continue
+            replacements.sort(key=lambda r: r['start'], reverse=True)
+            char_offset = 0
+            for run in para.runs:
+                run_len = len(run.text)
+                run_start = char_offset
+                run_end = char_offset + run_len
+                for r in replacements:
+                    if r['end'] <= run_start or r['start'] >= run_end:
+                        continue
+                    local_start = max(r['start'] - run_start, 0)
+                    local_end = min(r['end'] - run_start, run_len)
+                    run.text = (
+                        run.text[:local_start] + r['replacement'] + run.text[local_end:]
+                    )
                     run.font.color.rgb = RGBColor(255, 0, 0)
                     run.font.bold = True
+                char_offset += run_len
+                for r in replacements:
+                    delta = len(r['replacement']) - (r['end'] - r['start'])
+                    r['start'] += delta
+                    r['end'] += delta
+
+    anonymize_paragraphs(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                anonymize_paragraphs(cell.paragraphs)
+
     buf = BytesIO()
     doc.save(buf)
     buf.seek(0)
