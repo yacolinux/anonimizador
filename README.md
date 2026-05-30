@@ -4,6 +4,9 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
 
 ![Flask](https://img.shields.io/badge/Flask-3.1-blue) ![Python](https://img.shields.io/badge/Python-3.11-green) ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
+![Documento Simulado](screenshots/documento-simulado.jpeg)
+*Documento Simulado*
+
 ---
 
 ## ✨ Características
