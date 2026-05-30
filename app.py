@@ -6,9 +6,10 @@ import uuid
 import unicodedata
 import subprocess
 import tempfile
+import threading
 from io import BytesIO
 from functools import wraps
-from flask import session
+from flask import session, g
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +34,7 @@ app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-ch
 MODEL_NAME = os.environ.get('MODEL_NAME', 'qwen/qwen3-30b-a3b')
 ADMIN_USER = os.environ.get('ADMIN_USER', 'adminanon')
 ADMIN_PASS = os.environ.get('ADMIN_PASS', 'IJGNF678')
+READY_MAX_INFLIGHT = int(os.environ.get('READY_MAX_INFLIGHT', '2'))
 
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
 
@@ -40,6 +42,52 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 REGEX_PATTERNS_FILE = '/app/regex_patterns.json'
 MODEL_CONFIG_FILE = '/app/model_config.json'
+
+_inflight_lock = threading.Lock()
+_inflight_requests = 0
+
+
+def _inc_inflight():
+    global _inflight_requests
+    with _inflight_lock:
+        _inflight_requests += 1
+        return _inflight_requests
+
+
+def _dec_inflight():
+    global _inflight_requests
+    with _inflight_lock:
+        _inflight_requests = max(0, _inflight_requests - 1)
+        return _inflight_requests
+
+
+def _current_inflight():
+    with _inflight_lock:
+        return _inflight_requests
+
+
+@app.before_request
+def track_request_start():
+    if request.path == '/ready':
+        g._counted_inflight = False
+        return
+    g._counted_inflight = True
+    _inc_inflight()
+
+
+@app.after_request
+def track_request_end(response):
+    if getattr(g, '_counted_inflight', False):
+        _dec_inflight()
+        g._counted_inflight = False
+    return response
+
+
+@app.teardown_request
+def track_request_teardown(_exc):
+    if getattr(g, '_counted_inflight', False):
+        _dec_inflight()
+        g._counted_inflight = False
 
 DEFAULT_PATTERNS_DATA = {
     "patterns": [
@@ -554,6 +602,19 @@ def anonymize_pdf(segments, keywords, replacement='[REDACTADO]', title='Document
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/ready', methods=['GET'])
+def ready():
+    inflight = _current_inflight()
+    busy = inflight >= READY_MAX_INFLIGHT
+    payload = {
+        'ready': not busy,
+        'busy': busy,
+        'inflight': inflight,
+        'max_inflight': READY_MAX_INFLIGHT,
+    }
+    return (jsonify(payload), 200) if not busy else (jsonify(payload), 503)
 
 
 @app.route('/upload', methods=['POST'])

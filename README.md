@@ -34,6 +34,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - **Elegir Modelo**: configurar API endpoint URL y nombre del modelo (soporta modelos locales como Ollama)
 - **Normalización Unicode**: maneja acentos correctamente (Pérez ↔ Perez)
 - **Corre en Docker Compose** con un solo comando
+- **Listo para balanceo/HA**: endpoint `/ready` para que HAProxy detecte instancias ocupadas
 
 ---
 
@@ -72,6 +73,7 @@ La aplicación estará disponible en `http://localhost:5000`.
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
 | `ADMIN_PASS` | Contraseña del panel admin | `IJGNF678` |
 | `FLASK_SECRET_KEY` | Secret key para sesiones Flask | `cualquier-string-seguro` |
+| `READY_MAX_INFLIGHT` | Umbral de requests concurrentes para marcar busy en `/ready` | `2` |
 
 ### Sin Docker
 
@@ -97,6 +99,7 @@ anonimizador/
 │   ├── style.css           # CSS con tema oscuro/claro + admin panel
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, copy, admin
 ├── docker-compose.yml      # Orquestación Docker
+├── docker-compose.ha.yml   # 5 instancias activas + 5 opcionales para HA
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 ├── .env                    # Configuración sensible
@@ -119,6 +122,7 @@ anonimizador/
 | `/` | GET | Frontend web |
 | `/upload` | POST | Subir PDF/DOCX (multipart `file`) |
 | `/export` | POST | Exportar documento anonimizado (JSON body) |
+| `/ready` | GET | Estado de disponibilidad para balanceadores (200 libre / 503 busy) |
 | `/admin/login` | POST | Login panel admin |
 | `/admin/logout` | POST | Logout panel admin |
 | `/admin/status` | GET | Estado de sesión admin |
@@ -199,6 +203,30 @@ Configurables en `.env`:
    - **Nombre del modelo**: Formato `provider/modelo` (ej: `opencode/deepseek-v4-flash-free`)
 
 Los cambios se aplican inmediatamente al siguiente documento cargado.
+
+---
+
+## ⚖️ HA / Balanceo
+
+La app expone `GET /ready` para integración con HAProxy o balanceadores similares.
+
+- `200`: instancia disponible
+- `503`: instancia ocupada (busy)
+
+El umbral se controla con `READY_MAX_INFLIGHT`.
+
+Configuración ejemplo y parámetros recomendados: `HAPROXY.md`.
+
+Además se incluye `docker-compose.ha.yml`:
+
+- `web1..web5` activas por default (puertos `5001..5005`)
+- `web6..web10` comentadas para habilitar escalado a 10
+
+Levantar pool HA por default (5 instancias):
+
+```bash
+docker compose -f docker-compose.ha.yml up --build -d
+```
 
 ---
 

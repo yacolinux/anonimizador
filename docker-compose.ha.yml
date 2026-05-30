@@ -1,0 +1,143 @@
+services:
+  web1:
+    build: .
+    ports:
+      - "5001:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+    volumes:
+      - uploads_data_1:/app/uploads
+
+  web2:
+    build: .
+    ports:
+      - "5002:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+    volumes:
+      - uploads_data_2:/app/uploads
+
+  web3:
+    build: .
+    ports:
+      - "5003:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+    volumes:
+      - uploads_data_3:/app/uploads
+
+  web4:
+    build: .
+    ports:
+      - "5004:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+    volumes:
+      - uploads_data_4:/app/uploads
+
+  web5:
+    build: .
+    ports:
+      - "5005:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+    volumes:
+      - uploads_data_5:/app/uploads
+
+  # Instancias opcionales (descomentá para llegar a 10)
+  # web6:
+  #   build: .
+  #   ports:
+  #     - "5006:5000"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - FLASK_ENV=production
+  #     - PYTHONUNBUFFERED=1
+  #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #   volumes:
+  #     - uploads_data_6:/app/uploads
+
+  # web7:
+  #   build: .
+  #   ports:
+  #     - "5007:5000"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - FLASK_ENV=production
+  #     - PYTHONUNBUFFERED=1
+  #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #   volumes:
+  #     - uploads_data_7:/app/uploads
+
+  # web8:
+  #   build: .
+  #   ports:
+  #     - "5008:5000"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - FLASK_ENV=production
+  #     - PYTHONUNBUFFERED=1
+  #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #   volumes:
+  #     - uploads_data_8:/app/uploads
+
+  # web9:
+  #   build: .
+  #   ports:
+  #     - "5009:5000"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - FLASK_ENV=production
+  #     - PYTHONUNBUFFERED=1
+  #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #   volumes:
+  #     - uploads_data_9:/app/uploads
+
+  # web10:
+  #   build: .
+  #   ports:
+  #     - "5010:5000"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - FLASK_ENV=production
+  #     - PYTHONUNBUFFERED=1
+  #     - READY_MAX_INFLIGHT=${READY_MAX_INFLIGHT:-2}
+  #   volumes:
+  #     - uploads_data_10:/app/uploads
+
+volumes:
+  uploads_data_1:
+  uploads_data_2:
+  uploads_data_3:
+  uploads_data_4:
+  uploads_data_5:
+  # uploads_data_6:
+  # uploads_data_7:
+  # uploads_data_8:
+  # uploads_data_9:
+  # uploads_data_10:

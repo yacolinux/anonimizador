@@ -28,6 +28,7 @@ cp .env.example .env
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
 | `ADMIN_PASS` | Contraseña del panel admin | `IJGNF678` |
 | `FLASK_SECRET_KEY` | Secret key para sesiones Flask | `cualquier-string-seguro` |
+| `READY_MAX_INFLIGHT` | Umbral de requests concurrentes para marcar busy en `/ready` | `2` |
 
 ## API
 
@@ -38,6 +39,7 @@ cp .env.example .env
 | `/` | GET | Frontend web |
 | `/upload` | POST | Subir PDF/DOCX (multipart `file`). Retorna `{segments, keywords, default_keywords, positions, reasoning}` |
 | `/export` | POST | Exportar anonimizado. Body JSON: `{filename, keywords[{word,type}], format:docx\|pdf, replacement}` |
+| `/ready` | GET | Health de disponibilidad para HAProxy. Retorna `200` si libre y `503` si busy |
 
 ### Endpoints admin (requieren sesión)
 
@@ -61,6 +63,7 @@ anonimizador/
 │   ├── style.css           # CSS con tema oscuro/claro
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, admin panel
 ├── docker-compose.yml      # Orquestación Docker
+├── docker-compose.ha.yml   # Pool HA: 5 instancias activas + 5 opcionales
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 └── .env                    # Configuración sensible
@@ -69,6 +72,7 @@ anonimizador/
 ### Componentes backend (`app.py`)
 
 - **Flask app** con gunicorn (2 workers, timeout 180s)
+- **Endpoint `/ready`** para balanceo: reporta estado de ocupación por requests en vuelo (`inflight`)
 - **Extracción de texto**: `pdfplumber` para PDF, `python-docx` para DOCX
 - **Detección PII por regex**: `detect_default_pii()` lee patrones desde `regex_patterns.json`
 - **Detección PII por IA**: `call_opencode_for_pii()` ejecuta `opencode run` como subprocess (timeout 120s)
@@ -120,6 +124,13 @@ El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el 
 - **Timeout subprocess**: 120s para opencode (gunicorn timeout 180s)
 - **Subida máxima**: 50MB
 - **Auth opencode**: `entrypoint.sh` escribe `~/.local/share/opencode/auth.json` si `OPENAI_API_KEY` está definida
+- **HA / balanceo**: endpoint `/ready` + `READY_MAX_INFLIGHT` para que HAProxy enrute sólo a instancias libres
+
+## HA (5 a 10 instancias)
+
+- `docker-compose.ha.yml` trae `web1..web5` activas por default (`5001..5005`)
+- `web6..web10` quedan comentadas para escalar a 10 sin rediseñar compose
+- Config y backend de HAProxy recomendados en `HAPROXY.md`
 
 ## Pruebas
 
