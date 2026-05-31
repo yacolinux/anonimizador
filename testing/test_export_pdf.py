@@ -114,3 +114,27 @@ def test_anonymize_pdf_output_is_bytesio():
     buf = anon_app.anonymize_pdf(segments, keywords, '[REDACTADO]')
     assert isinstance(buf, BytesIO)
     assert len(buf.getvalue()) > 0
+
+def test_anonymize_pdf_scanned_pdf_ocr_fallback():
+    import os
+    scan_path = os.path.join(os.path.dirname(__file__), 'scansmpl.pdf')
+    assert os.path.exists(scan_path)
+    
+    segments, used_ocr = anon_app.extract_text_pdf(scan_path)
+    assert used_ocr is True
+    assert len(segments) > 0
+    
+    keywords = []
+    for seg in segments:
+        text = seg['text']
+        if len(text) > 10:
+            words = text.split()
+            if len(words) >= 2:
+                keywords.append({'word': ' '.join(words[:2]), 'type': 'test'})
+    
+    if keywords:
+        buf = anon_app.anonymize_pdf(segments, keywords, '[REDACTADO]')
+        assert isinstance(buf, BytesIO)
+        assert len(buf.getvalue()) > 0
+        content = _extract_pdf_text(buf)
+        assert '[REDACTADO]' in content

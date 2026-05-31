@@ -16,6 +16,8 @@ from functools import wraps
 from flask import session, g
 from flask_session import Session
 import redis
+import pdf2image
+import pytesseract
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,8 +56,14 @@ LOCAL_INFERENCE_MAX = int(os.environ.get('LOCAL_INFERENCE_MAX', '3'))
 LOCAL_INFERENCE_WAIT_SECONDS = int(os.environ.get('LOCAL_INFERENCE_WAIT_SECONDS', '90'))
 LOCAL_INFERENCE_POLL_SECONDS = float(os.environ.get('LOCAL_INFERENCE_POLL_SECONDS', '1.5'))
 LOCAL_INFERENCE_SLOT_TTL_SECONDS = int(os.environ.get('LOCAL_INFERENCE_SLOT_TTL_SECONDS', '180'))
+MAX_UPLOAD_MB = int(os.environ.get('MAX_UPLOAD_MB', '100'))
+OCR_MAX_PAGES = int(os.environ.get('OCR_MAX_PAGES', '50'))
+OCR_DPI = int(os.environ.get('OCR_DPI', '200'))
+OCR_LANG = os.environ.get('OCR_LANG', 'spa')
 
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
+
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -461,6 +469,23 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def extract_text_ocr(filepath):
+    segments = []
+    try:
+        logger.info('Convirtiendo PDF a imagenes para OCR (dpi=%d, lang=%s)', OCR_DPI, OCR_LANG)
+        images = pdf2image.convert_from_path(filepath, dpi=OCR_DPI)
+        for i, image in enumerate(images):
+            if i >= OCR_MAX_PAGES:
+                logger.warning('Limite de paginas OCR alcanzado (%d)', OCR_MAX_PAGES)
+                break
+            text = pytesseract.image_to_string(image, lang=OCR_LANG)
+            if text.strip():
+                segments.append({'type': 'paragraph', 'text': text.strip()})
+    except Exception as e:
+        logger.error('Error en OCR: %s', e)
+    return segments
+
+
 def extract_text_pdf(filepath):
     segments = []
     try:
@@ -501,7 +526,14 @@ def extract_text_pdf(filepath):
                             segments.append({'type': 'paragraph', 'text': line})
         except Exception:
             pass
-    return segments
+    
+    total_text_len = sum(len(s['text']) for s in segments)
+    if total_text_len < 100:
+        logger.info('PDF con poco texto extraible (%d chars). Iniciando fallback OCR.', total_text_len)
+        ocr_segments = extract_text_ocr(filepath)
+        if ocr_segments:
+            return ocr_segments, True
+    return segments, False
 
 
 def extract_text_docx(filepath):
@@ -536,8 +568,8 @@ def extract_text(filepath):
     if ext == 'pdf':
         return extract_text_pdf(filepath)
     elif ext == 'docx':
-        return extract_text_docx(filepath)
-    return []
+        return extract_text_docx(filepath), False
+    return [], False
 
 
 def segments_to_plaintext(segments):
@@ -971,7 +1003,7 @@ def upload():
     file.save(filepath)
     logger.info('Archivo guardado: %s (%s)', filename, ext)
 
-    segments = extract_text(filepath)
+    segments, used_ocr = extract_text(filepath)
     if not segments:
         return jsonify({'error': 'Could not extract text from this document'}), 400
     logger.info('Texto extraído: %d segmentos', len(segments))
@@ -989,6 +1021,7 @@ def upload():
         'queue_notice': result['queue_notice'],
         'ai_status': result['ai_status'],
         'analysis_mode': result['analysis_mode'],
+        'used_ocr': used_ocr,
     })
 
 
@@ -1004,7 +1037,7 @@ def reanalyze_ai():
     if not is_path_inside_uploads(filepath) or not os.path.exists(filepath):
         return jsonify({'error': 'File not found'}), 404
 
-    segments = extract_text(filepath)
+    segments, used_ocr = extract_text(filepath)
     if not segments:
         return jsonify({'error': 'Could not extract text from this document'}), 400
 
@@ -1020,6 +1053,7 @@ def reanalyze_ai():
         'queue_notice': result['queue_notice'],
         'ai_status': result['ai_status'],
         'analysis_mode': result['analysis_mode'],
+        'used_ocr': used_ocr,
     }), status_code
 
 
@@ -1092,7 +1126,7 @@ def export():
             download_name=f'anonimizado_{filename.replace(".pdf", ".docx")}'
         )
     elif output_format == 'pdf':
-        segments = extract_text(filepath)
+        segments, _ = extract_text(filepath)
         buf = anonymize_pdf(segments, kw_entries, replacement,
                            f'Anonimizado - {filename}')
         logger.info('Export PDF completado')

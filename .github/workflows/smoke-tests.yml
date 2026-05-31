@@ -11,6 +11,35 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Job 0: ejecuta tests unitarios, de seguridad y calidad con pytest.
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Descarga el contenido del repositorio al runner.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Construye y levanta solo Redis (requerido por conftest.py).
+      - name: Start Redis for unit tests
+        run: docker compose up -d redis
+
+      # Ejecuta la suite de tests unitarios dentro del contenedor web.
+      - name: Run pytest suite
+        run: docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
+
+      # Publica logs de pytest si el job falla.
+      - name: Upload pytest logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-output
+          path: |
+            testing/logs/
+            *.log
+          if-no-files-found: ignore
+
   # Job 1: valida el modo single-instance (docker-compose.yml).
   smoke-single:
     runs-on: ubuntu-latest
@@ -75,11 +104,12 @@ jobs:
           path: testing/logs/smoke-ha-*.log
           if-no-files-found: warn
 
-  # Job 3 (opcional de lectura): resumen textual al final.
-  # Este job depende de ambos; se ejecuta aunque fallen para dejar traza clara.
+  # Job 4 (opcional de lectura): resumen textual al final.
+  # Este job depende de todos; se ejecuta aunque fallen para dejar traza clara.
   summary:
     runs-on: ubuntu-latest
     needs:
+      - unit-tests
       - smoke-single
       - smoke-ha
     if: always()

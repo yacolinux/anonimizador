@@ -97,6 +97,9 @@ async function uploadFile(file) {
     if (data.queue_notice) {
       showToast(data.queue_notice);
     }
+    if (data.used_ocr) {
+      showToast('Documento escaneado detectado. Procesamiento OCR aplicado.');
+    }
     fileBadge.textContent = file.name;
     uploadProgress.hidden = true;
     mainLayout.hidden = false;
