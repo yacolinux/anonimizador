@@ -353,7 +353,7 @@ El proyecto tiene **210 tests** en 3 categorías. Detalle completo en [TESTING.m
 
 - **IA real**: los tests unitarios no invocan opencode ni LLMs externos
 - **Frontend**: no hay tests de JavaScript/UI (solo backend)
-- **Documentos escaneados**: OCR no está cubierto
+- **Documentos escaneados**: cubierto de forma básica por `test_export_pdf.py::test_anonymize_pdf_scanned_pdf_ocr_fallback` (valida fallback OCR y export). No cubre benchmarking ni alta variedad de escaneos.
 - **Rendimiento**: no hay tests de carga ni benchmarks
 - **HA distribuido**: rate limit y sesiones se testean en 1 instancia, no en pool HA
 
