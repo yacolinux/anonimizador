@@ -21,9 +21,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Crea un .env temporal para CI a partir de la plantilla.
-      - name: Create temporary .env for CI
-        run: cp .env.example .env
+      # Crea un .env explícito para CI con variables de test.
+      - name: Create .env for CI
+        run: |
+          echo "FLASK_SECRET_KEY=test-secret-key" > .env
+          echo "ADMIN_USER=admin" >> .env
+          echo "ADMIN_PASS=testpass" >> .env
+          echo "MODEL_NAME=opencode/test-model" >> .env
+          echo "OPENAI_BASE_URL=https://api.test.com/v1" >> .env
+          echo "REDIS_URL=redis://redis:6379/15" >> .env
+          echo "SESSION_BACKEND=cookie" >> .env
+          echo "UPLOAD_TTL_SECONDS=900" >> .env
+          echo "LOCAL_INFERENCE_MAX=3" >> .env
+          echo "MAX_UPLOAD_MB=100" >> .env
+          echo "OCR_MAX_PAGES=50" >> .env
 
       # Construye y levanta solo Redis (requerido por conftest.py).
       - name: Start Redis for unit tests
@@ -58,10 +69,20 @@ jobs:
       - name: Set execute permissions for test scripts
         run: chmod +x testing/*.sh
 
-      # Crea un .env temporal para CI a partir de la plantilla.
-      # El runner es efimero: este archivo solo vive durante el job.
-      - name: Create temporary .env for CI
-        run: cp .env.example .env
+      # Crea un .env explícito para CI con variables de test.
+      - name: Create .env for CI
+        run: |
+          echo "FLASK_SECRET_KEY=test-secret-key" > .env
+          echo "ADMIN_USER=admin" >> .env
+          echo "ADMIN_PASS=testpass" >> .env
+          echo "MODEL_NAME=opencode/test-model" >> .env
+          echo "OPENAI_BASE_URL=https://api.test.com/v1" >> .env
+          echo "REDIS_URL=redis://redis:6379/15" >> .env
+          echo "SESSION_BACKEND=cookie" >> .env
+          echo "UPLOAD_TTL_SECONDS=900" >> .env
+          echo "LOCAL_INFERENCE_MAX=3" >> .env
+          echo "MAX_UPLOAD_MB=100" >> .env
+          echo "OCR_MAX_PAGES=50" >> .env
 
       # Ejecuta el smoke test single.
       - name: Run single-instance smoke test
@@ -90,10 +111,20 @@ jobs:
       - name: Set execute permissions for test scripts
         run: chmod +x testing/*.sh
 
-      # Crea un .env temporal para CI a partir de la plantilla.
-      # El runner es efimero: este archivo solo vive durante el job.
-      - name: Create temporary .env for CI
-        run: cp .env.example .env
+      # Crea un .env explícito para CI con variables de test.
+      - name: Create .env for CI
+        run: |
+          echo "FLASK_SECRET_KEY=test-secret-key" > .env
+          echo "ADMIN_USER=admin" >> .env
+          echo "ADMIN_PASS=testpass" >> .env
+          echo "MODEL_NAME=opencode/test-model" >> .env
+          echo "OPENAI_BASE_URL=https://api.test.com/v1" >> .env
+          echo "REDIS_URL=redis://redis:6379/15" >> .env
+          echo "SESSION_BACKEND=cookie" >> .env
+          echo "UPLOAD_TTL_SECONDS=900" >> .env
+          echo "LOCAL_INFERENCE_MAX=3" >> .env
+          echo "MAX_UPLOAD_MB=100" >> .env
+          echo "OCR_MAX_PAGES=50" >> .env
 
       # Ejecuta el smoke test HA.
       - name: Run HA smoke test

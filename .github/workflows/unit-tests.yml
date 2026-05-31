@@ -16,8 +16,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create temporary .env for CI
-        run: cp .env.example .env
+      - name: Create .env for CI
+        run: |
+          echo "FLASK_SECRET_KEY=test-secret-key" > .env
+          echo "ADMIN_USER=admin" >> .env
+          echo "ADMIN_PASS=testpass" >> .env
+          echo "MODEL_NAME=opencode/test-model" >> .env
+          echo "OPENAI_BASE_URL=https://api.test.com/v1" >> .env
+          echo "REDIS_URL=redis://redis:6379/15" >> .env
+          echo "SESSION_BACKEND=cookie" >> .env
+          echo "UPLOAD_TTL_SECONDS=900" >> .env
+          echo "LOCAL_INFERENCE_MAX=3" >> .env
+          echo "MAX_UPLOAD_MB=100" >> .env
+          echo "OCR_MAX_PAGES=50" >> .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -52,8 +63,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create temporary .env for CI
-        run: cp .env.example .env
+      - name: Create .env for CI
+        run: |
+          echo "FLASK_SECRET_KEY=test-secret-key" > .env
+          echo "ADMIN_USER=admin" >> .env
+          echo "ADMIN_PASS=testpass" >> .env
+          echo "MODEL_NAME=opencode/test-model" >> .env
+          echo "OPENAI_BASE_URL=https://api.test.com/v1" >> .env
+          echo "REDIS_URL=redis://redis:6379/15" >> .env
+          echo "SESSION_BACKEND=cookie" >> .env
+          echo "UPLOAD_TTL_SECONDS=900" >> .env
+          echo "LOCAL_INFERENCE_MAX=3" >> .env
+          echo "MAX_UPLOAD_MB=100" >> .env
+          echo "OCR_MAX_PAGES=50" >> .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -85,8 +107,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create temporary .env for CI
-        run: cp .env.example .env
+      - name: Create .env for CI
+        run: |
+          echo "FLASK_SECRET_KEY=test-secret-key" > .env
+          echo "ADMIN_USER=admin" >> .env
+          echo "ADMIN_PASS=testpass" >> .env
+          echo "MODEL_NAME=opencode/test-model" >> .env
+          echo "OPENAI_BASE_URL=https://api.test.com/v1" >> .env
+          echo "REDIS_URL=redis://redis:6379/15" >> .env
+          echo "SESSION_BACKEND=cookie" >> .env
+          echo "UPLOAD_TTL_SECONDS=900" >> .env
+          echo "LOCAL_INFERENCE_MAX=3" >> .env
+          echo "MAX_UPLOAD_MB=100" >> .env
+          echo "OCR_MAX_PAGES=50" >> .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
