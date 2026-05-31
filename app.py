@@ -44,7 +44,7 @@ MODEL_NAME = os.environ.get('MODEL_NAME', 'qwen/qwen3-30b-a3b')
 ADMIN_USER = os.environ.get('ADMIN_USER', 'adminanon')
 ADMIN_PASS = os.environ.get('ADMIN_PASS')
 READY_MAX_INFLIGHT = int(os.environ.get('READY_MAX_INFLIGHT', '2'))
-UPLOAD_TTL_SECONDS = int(os.environ.get('UPLOAD_TTL_SECONDS', str(24 * 3600)))
+UPLOAD_TTL_SECONDS = int(os.environ.get('UPLOAD_TTL_SECONDS', str(900)))
 LOGIN_MAX_ATTEMPTS = int(os.environ.get('LOGIN_MAX_ATTEMPTS', '5'))
 LOGIN_WINDOW_SECONDS = int(os.environ.get('LOGIN_WINDOW_SECONDS', '300'))
 SESSION_BACKEND = os.environ.get('SESSION_BACKEND', 'redis').lower()
@@ -197,6 +197,19 @@ validate_required_env()
 init_redis_client()
 configure_session_backend()
 bootstrap_config_in_redis()
+
+
+def _cleanup_loop():
+    while True:
+        time.sleep(60)
+        try:
+            cleanup_old_uploads()
+        except Exception:
+            logger.warning('Error en limpieza periódica de uploads')
+
+
+cleanup_thread = threading.Thread(target=_cleanup_loop, daemon=True, name='cleanup-loop')
+cleanup_thread.start()
 
 
 def _inc_inflight():
@@ -1010,8 +1023,23 @@ def reanalyze_ai():
     }), status_code
 
 
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            return jsonify({'error': 'Unauthorized'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
 @app.route('/uploads/<filename>')
+@admin_required
 def uploaded_file(filename):
+    if not is_valid_upload_filename(filename):
+        return jsonify({'error': 'Invalid filename'}), 400
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not is_path_inside_uploads(filepath) or not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
@@ -1052,6 +1080,10 @@ def export():
     if output_format == 'docx':
         buf = anonymize_docx(filepath, kw_entries, replacement)
         logger.info('Export DOCX completado')
+        try:
+            os.unlink(filepath)
+        except OSError:
+            pass
         return send_file(
             buf,
             mimetype='application/vnd.openxmlformats-officedocument'
@@ -1064,6 +1096,10 @@ def export():
         buf = anonymize_pdf(segments, kw_entries, replacement,
                            f'Anonimizado - {filename}')
         logger.info('Export PDF completado')
+        try:
+            os.unlink(filepath)
+        except OSError:
+            pass
         return send_file(
             buf,
             mimetype='application/pdf',
@@ -1072,15 +1108,6 @@ def export():
         )
 
     return jsonify({'error': 'Unsupported format. Use docx or pdf'}), 400
-
-
-def admin_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get('admin_logged_in'):
-            return jsonify({'error': 'Unauthorized'}), 401
-        return f(*args, **kwargs)
-    return decorated
 
 
 @app.route('/admin/login', methods=['POST'])
@@ -1131,6 +1158,53 @@ def admin_get_config():
     })
 
 
+def validate_config_patterns(patterns):
+    if not isinstance(patterns, list):
+        return 'patterns debe ser una lista'
+    for i, p in enumerate(patterns):
+        if not isinstance(p, dict):
+            return f'patrón {i}: debe ser un objeto JSON'
+        if 'pattern' not in p or 'type' not in p:
+            return f'patrón {i}: requiere campos "pattern" y "type"'
+        if not isinstance(p['pattern'], str) or not isinstance(p['type'], str):
+            return f'patrón {i}: "pattern" y "type" deben ser strings'
+        if len(p['pattern']) > 300:
+            return f'patrón {i}: regex demasiado largo (máx 300 chars)'
+        try:
+            re.compile(p['pattern'])
+        except re.error as e:
+            return f'patrón {i}: regex inválido — {e}'
+    return None
+
+
+def validate_config_prompt(prompt):
+    if not isinstance(prompt, str):
+        return 'prompt debe ser un string'
+    if len(prompt) > 10000:
+        return 'prompt demasiado largo (máx 10000 chars)'
+    return None
+
+
+def validate_config_model_url(model_url):
+    if model_url is None:
+        return None
+    if not isinstance(model_url, str):
+        return 'model_url debe ser un string'
+    if len(model_url) > 500:
+        return 'model_url demasiado largo (máx 500 chars)'
+    if model_url.strip():
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(model_url)
+            if parsed.scheme not in ('http', 'https'):
+                return 'model_url debe usar http o https'
+            if not parsed.netloc:
+                return 'model_url debe incluir un host válido'
+        except Exception:
+            return 'model_url no es una URL válida'
+    return None
+
+
 @app.route('/admin/config', methods=['POST'])
 @admin_required
 def admin_save_config():
@@ -1141,6 +1215,17 @@ def admin_save_config():
     prompt = data.get('prompt', '')
     model_url = data.get('model_url')
     model_name = data.get('model_name')
+
+    err = validate_config_patterns(patterns)
+    if err:
+        return jsonify({'error': err}), 400
+    err = validate_config_prompt(prompt)
+    if err:
+        return jsonify({'error': err}), 400
+    err = validate_config_model_url(model_url)
+    if err:
+        return jsonify({'error': err}), 400
+
     try:
         save_regex_config(patterns, prompt, model_url, model_name)
         return jsonify({'ok': True})

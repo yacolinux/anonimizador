@@ -236,12 +236,24 @@ class TestCookieAndHeaders:
 
 class TestUploadsEndpoint:
 
-    def test_uploads_endpoint_requires_valid_uuid(self, client):
-        resp = client.get('/uploads/../../../etc/passwd')
-        assert resp.status_code == 404
+    def test_uploads_endpoint_requires_auth(self, client):
+        resp = client.get('/uploads/550e8400-e29b-41d4-a716-446655440000.pdf')
+        assert resp.status_code == 401
 
-    def test_uploads_endpoint_random_filename(self, client):
-        resp = client.get('/uploads/nonexistent-file.pdf')
+    def test_uploads_endpoint_with_auth_invalid_uuid(self, client):
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        resp = client.get('/uploads/../../../etc/passwd')
+        assert resp.status_code in (400, 404)
+
+    def test_uploads_endpoint_with_auth_nonexistent(self, client):
+        import uuid
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        uid = str(uuid.uuid4())
+        resp = client.get(f'/uploads/{uid}.pdf')
         assert resp.status_code == 404
 
 class TestAdminConfigValidation:
@@ -254,15 +266,48 @@ class TestAdminConfigValidation:
             'patterns': [{'pattern': '[invalid', 'type': 'test'}],
             'prompt': 'test',
         })
-        assert resp.status_code == 200
+        assert resp.status_code == 400
+        assert 'regex inválido' in resp.get_json().get('error', '').lower()
 
-    def test_save_empty_patterns(self, client):
+    def test_save_pattern_too_long(self, client):
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        resp = client.post('/admin/config', json={
+            'patterns': [{'pattern': 'a' * 301, 'type': 'test'}],
+            'prompt': 'test',
+        })
+        assert resp.status_code == 400
+
+    def test_save_missing_pattern_fields(self, client):
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        resp = client.post('/admin/config', json={
+            'patterns': [{'pattern': '\\d+'}],
+            'prompt': 'test',
+        })
+        assert resp.status_code == 400
+
+    def test_save_invalid_model_url(self, client):
         client.post('/admin/login', json={
             'user': 'admin', 'password': 'testpass'
         })
         resp = client.post('/admin/config', json={
             'patterns': [],
             'prompt': 'test',
+            'model_url': 'not-a-url',
+        })
+        assert resp.status_code == 400
+
+    def test_save_valid_config(self, client):
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        resp = client.post('/admin/config', json={
+            'patterns': [{'pattern': '\\d+', 'type': 'num'}],
+            'prompt': 'test prompt',
+            'model_url': 'https://api.example.com/v1',
         })
         assert resp.status_code == 200
 
