@@ -47,3 +47,19 @@ Logs:
 
 - Se guardan en `testing/logs/`
 - Formato: `smoke-ha-YYYYmmdd-HHMMSS.log`
+
+## Tests formales (pytest)
+
+Suite de 215 tests unitarios, de seguridad y calidad.
+
+Ejecución:
+
+```bash
+docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
+```
+
+### Tests agregados recientemente
+
+- `test_export_pdf.py::test_anonymize_pdf_scanned_pdf_ocr_fallback`: valida fallback OCR con `scansmpl.pdf` y exportación correcta.
+- `test_security.py`: validación de subida, path traversal, rate limit, cookies seguras, auth admin, regex inválido.
+- `test_anonymization_quality.py`: detección regex de DNI, CUIL, nombres, domicilios, expedientes, víctimas, imputados, menores, delitos sexuales, violencia, fallecimientos, organismos judiciales.

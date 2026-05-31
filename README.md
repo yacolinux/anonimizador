@@ -98,6 +98,10 @@ docker compose logs --tail=200 web redis
 | `LOCAL_INFERENCE_WAIT_SECONDS` | Espera máxima de slot local en `/upload` | `90` |
 | `LOCAL_INFERENCE_POLL_SECONDS` | Polling para tomar slot local | `1.5` |
 | `LOCAL_INFERENCE_SLOT_TTL_SECONDS` | TTL de seguridad del slot local en Redis | `180` |
+| `MAX_UPLOAD_MB` | Tamaño máximo de subida en MB | `100` |
+| `OCR_MAX_PAGES` | Máximo de páginas a procesar con OCR | `50` |
+| `OCR_DPI` | Resolución para conversión de PDF a imagen | `200` |
+| `OCR_LANG` | Idioma de Tesseract OCR | `spa` |
 
 ### Sin Docker
 

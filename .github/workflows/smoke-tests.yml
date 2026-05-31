@@ -21,6 +21,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Crea un .env temporal para CI a partir de la plantilla.
+      - name: Create temporary .env for CI
+        run: cp .env.example .env
+
       # Construye y levanta solo Redis (requerido por conftest.py).
       - name: Start Redis for unit tests
         run: docker compose up -d redis

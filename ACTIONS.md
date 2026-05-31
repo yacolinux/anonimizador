@@ -32,7 +32,7 @@ Este repositorio tiene **2 workflows** de CI que corren en cada `push`, `pull_re
 - `test_filename_validation.py` — Validación de filenames
 - `test_admin_config_validation.py` — Config del panel admin
 - `test_export_docx.py` — Anonimización DOCX
-- `test_export_pdf.py` — Anonimización PDF
+- `test_export_pdf.py` — Anonimización PDF (11 tests, incluye fallback OCR con `scansmpl.pdf`)
 
 **`security-tests`** — Seguridad de la API:
 - Subida de archivos no permitidos (exe, txt, zip, path traversal, null byte)
@@ -71,12 +71,13 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 
 ---
 
-### 2. `smoke-tests.yml` — Smoke Tests E2E
+### 2. `smoke-tests.yml` — Smoke Tests E2E + Unit Tests
 
-**Tiempo:** ~5-10 minutos (2 jobs + resumen)
+**Tiempo:** ~5-10 minutos (3 jobs + resumen)
 
 | Job | Qué corre | Timeout |
 |---|---|---|
+| `unit-tests` | `pytest testing/ -v` (215 tests) | 15 min |
 | `smoke-single` | `testing/smoke_single.sh` (1 instancia) | 35 min |
 | `smoke-ha` | `testing/smoke_ha.sh` (HAProxy + 5 instancias) | 45 min |
 | `summary` | Resumen textual (siempre, aunque fallen) | — |
@@ -88,6 +89,12 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 3. Crea `.env` temporal desde `.env.example`
 4. Ejecuta el smoke test correspondiente (levanta stack Docker completo)
 5. Sube logs como artifact (siempre, incluso si fallan)
+
+#### Qué valida `unit-tests` (dentro de `smoke-tests.yml`)
+
+- 215 tests pytest (unitarios, seguridad, calidad)
+- Fallback OCR con `scansmpl.pdf` (`test_anonymize_pdf_scanned_pdf_ocr_fallback`)
+- Levanta solo Redis (`docker compose up -d redis`) y corre `pytest testing/ -v`
 
 #### Qué valida `smoke-single`
 
@@ -124,7 +131,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 | Workflow | Archivo | Jobs | Tiempo | Trigger |
 |---|---|---|---|---|
 | Unit & Security Tests | `.github/workflows/unit-tests.yml` | 3 (paralelos) | ~10s | push, PR, manual |
-| Smoke Tests | `.github/workflows/smoke-tests.yml` | 2 + summary | 5-10 min | push, PR, manual |
+| Smoke Tests + Unit Tests | `.github/workflows/smoke-tests.yml` | 3 + summary | 5-10 min | push, PR, manual |
 
 ## Flujo recomendado
 
@@ -141,5 +148,6 @@ Cada job sube artifacts incluso si falla, para facilitar debugging:
 | `unit-tests.yml` | `unit-tests` | `unit-test-results` | Directorio `testing/` completo |
 | `unit-tests.yml` | `security-tests` | `security-test-results` | Directorio `testing/` completo |
 | `unit-tests.yml` | `quality-tests` | `quality-test-results` | Directorio `testing/` completo |
+| `smoke-tests.yml` | `unit-tests` | `pytest-output` | `testing/logs/` y logs de pytest |
 | `smoke-tests.yml` | `smoke-single` | `smoke-single-logs` | `testing/logs/smoke-single-*.log` |
 | `smoke-tests.yml` | `smoke-ha` | `smoke-ha-logs` | `testing/logs/smoke-ha-*.log` |

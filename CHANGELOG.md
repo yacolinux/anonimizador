@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-05-31
+
+### Added
+- **Soporte OCR para PDFs escaneados**: fallback automático si `pdfplumber` extrae <100 chars. Usa `pdf2image` + `pytesseract` (Tesseract 5 + modelo `spa`).
+- **Nuevas variables de entorno**: `MAX_UPLOAD_MB=100`, `OCR_MAX_PAGES=50`, `OCR_DPI=200`, `OCR_LANG=spa`.
+- **Campo `used_ocr` en respuesta `/upload` y `/reanalyze-ai`**: permite al frontend mostrar *"Documento escaneado detectado. Procesamiento OCR aplicado."*
+- **Test unitario `test_anonymize_pdf_scanned_pdf_ocr_fallback`**: valida que el fallback OCR se dispare y exporte correctamente con `scansmpl.pdf`.
+- **Job `unit-tests` en GitHub Actions**: corre `pytest testing/ -v` automáticamente en cada push/PR. Incluye `.env` temporal para CI.
+- **Archivo `ACTIONS.md`**: documentación completa de workflows de CI/CD.
+
+### Fixed
+- **Bug en `/export` PDF**: `extract_text()` devuelve tupla `(segments, used_ocr)`. Se corrigió desempaquetado en `anonymize_pdf()` para evitar `TypeError`.
+- **GitHub Actions `unit-tests`**: agregado paso `cp .env.example .env` antes de ejecutar `docker compose run` para evitar fallo por archivo faltante.
+
+### Changed
+- **Límite de subida**: `MAX_CONTENT_LENGTH` ahora configurable vía `MAX_UPLOAD_MB` (default 100MB).
+- **Dependencias Docker**: `tesseract-ocr`, `tesseract-ocr-spa`, `poppler-utils` instalados en `Dockerfile`.
+- **Dependencias Python**: `pdf2image`, `pytesseract` agregados a `requirements.txt`.
+- **Documentación actualizada**: `README.md`, `AGENTS.md`, `testing/README.md`, `ACTIONS.md`.
+
+---
+
 ## 2026-05-30
 
 ### Added

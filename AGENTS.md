@@ -40,6 +40,10 @@ cp .env.example .env
 | `LOCAL_INFERENCE_WAIT_SECONDS` | Espera máxima para tomar slot local en `/upload` | `90` |
 | `LOCAL_INFERENCE_POLL_SECONDS` | Intervalo de polling para tomar slot local | `1.5` |
 | `LOCAL_INFERENCE_SLOT_TTL_SECONDS` | TTL de seguridad de slot local en Redis | `180` |
+| `MAX_UPLOAD_MB` | Tamaño máximo de subida en MB | `100` |
+| `OCR_MAX_PAGES` | Máximo de páginas a procesar con OCR | `50` |
+| `OCR_DPI` | Resolución para conversión de PDF a imagen | `200` |
+| `OCR_LANG` | Idioma de Tesseract OCR | `spa` |
 
 ## API
 
@@ -92,7 +96,7 @@ anonimizador/
 │   ├── test_filename_validation.py    # Unit: validación de filenames (17 tests)
 │   ├── test_admin_config_validation.py# Unit: config del panel admin (14 tests)
 │   ├── test_export_docx.py            # Unit: export/anonimización DOCX (8 tests)
-│   ├── test_export_pdf.py             # Unit: export/anonimización PDF (10 tests)
+│   ├── test_export_pdf.py             # Unit: export/anonimización PDF (11 tests)
 │   ├── test_security.py               # Seguridad: upload, export, admin, rate limit (34 tests)
 │   ├── test_anonymization_quality.py  # Calidad con documentos sintéticos (46 tests)
 │   ├── smoke_single.sh                # Smoke: stack single
