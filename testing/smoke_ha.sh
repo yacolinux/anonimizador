@@ -29,7 +29,7 @@ assert_file_contains "/tmp/anon_test_503.html" "En espera de Anonimizador"
 assert_file_contains "/tmp/anon_test_503.html" "content=\"10\""
 
 run "sudo docker compose -f docker-compose.ha.yml start web1 web2 web3 web4 web5"
-run "sleep 5"
+run "sleep 15"
 assert_http_code "http://localhost:8081/ready" "200" "/tmp/anon_test_ready_after.txt"
 cat /tmp/anon_test_ready_after.txt
 
