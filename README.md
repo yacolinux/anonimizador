@@ -129,8 +129,9 @@ anonimizador/
 ├── haproxy-503.http         # Pagina 503 de espera con refresh cada 10s
 ├── HAPROXY.md              # Guia de balanceo y health checks
 ├── OPERACION-HA.md         # Runbook single-instance + HA
-├── testing/                # Smoke tests bash (single, HA, run_all) + logs locales
-├── .github/workflows/      # Pipeline CI (GitHub Actions)
+├── TESTING.md              # Documentación completa de tests (qué testea y qué NO)
+├── testing/                # 210 tests: unitarios, seguridad, calidad + smoke bash
+├── .github/workflows/      # CI: unit-tests.yml + smoke-tests.yml
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 ├── .env                    # Configuración sensible
@@ -331,62 +332,48 @@ curl -s http://localhost:8404/stats
 
 ---
 
-## 🧪 Pruebas rápidas
+## 🧪 Testing
+
+El proyecto tiene **210 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
+
+### Qué se testea
+
+| Tipo | Tests | Qué cubre |
+|---|---|---|
+| **Unitarios** | 130 | Regex PII, parser de IA, Unicode, reemplazo, filenames, config admin, export DOCX/PDF |
+| **Seguridad** | 34 | Archivos no permitidos, path traversal, rate limit login, cookies seguras, auth admin |
+| **Calidad** | 46 | Documentos sintéticos con DNI, CUIL, nombres, domicilios, expedientes, víctimas, imputados, menores, delitos sexuales, violencia, fallecimientos, organismos judiciales |
+| **Smoke (E2E)** | 2 scripts | Stack single y HA completo (upload → export) |
+
+### Qué NO se testea
+
+- **IA real**: los tests unitarios no invocan opencode ni LLMs externos
+- **Frontend**: no hay tests de JavaScript/UI (solo backend)
+- **Documentos escaneados**: OCR no está cubierto
+- **Rendimiento**: no hay tests de carga ni benchmarks
+- **HA distribuido**: rate limit y sesiones se testean en 1 instancia, no en pool HA
+
+### Ejecutar tests
 
 ```bash
-# Crear documento de prueba
-docker exec -i anonimizador-web-1 python3 -c "
-from docx import Document
-d = Document()
-d.add_heading('Historia Clínica', level=1)
-d.add_paragraph('Paciente: Juan Pérez, DNI 30.123.456')
-d.add_paragraph('Dirección: Av. Corrientes 1234, CABA')
-d.save('/tmp/test.docx')
-"
-docker cp anonimizador-web-1:/tmp/test.docx /tmp/test.docx
+# Todos los tests (~2s)
+docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
 
-# Probar subida
-curl -s -F "file=@/tmp/test.docx" http://localhost:5000/upload | python3 -m json.tool
+# Solo una categoría
+docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_security.py -v
 
-# Probar exportación
-curl -s -F "file=@/tmp/test.docx" http://localhost:5000/upload > /tmp/r.json
-python3 -c "
-import json
-r = json.load(open('/tmp/r.json'))
-kw = [{'word': p['word'], 'type': p['type']} for p in r['positions']]
-print(json.dumps({'filename': r['filename'], 'keywords': kw, 'format': 'docx'}))
-" | curl -s -X POST -H 'Content-Type: application/json' -d @- http://localhost:5000/export -o /tmp/anon.docx
-
-# Probar panel admin
-curl -s -c /tmp/cookies.txt -X POST -H 'Content-Type: application/json' \
-  -d '{"user":"adminanon","password":"cambiar-esta-clave"}' http://localhost:5000/admin/login
-curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json.tool
-```
-
-## 🧪 Smoke tests automatizados
-
-Se incluye una base de testing por scripts en `testing/`:
-
-- `testing/smoke_single.sh` valida modo single (`docker-compose.yml`)
-- `testing/smoke_ha.sh` valida modo HA (`docker-compose.ha.yml` + HAProxy)
-- `testing/run_all.sh` ejecuta ambos en secuencia
-
-Uso local:
-
-```bash
+# Smoke tests E2E (levantan Docker)
 ./testing/run_all.sh
 ```
 
-Logs:
+### CI
 
-- Se guardan en `testing/logs/` (ignorado por git)
+Dos workflows de GitHub Actions:
 
-CI en GitHub Actions:
-
-- Workflow: `.github/workflows/smoke-tests.yml`
-- Jobs: `smoke-single` y `smoke-ha`
-- Si falta `.env` en runner, el workflow crea uno temporal con `cp .env.example .env`
-- Publica artifacts con logs al finalizar
+| Workflow | Jobs | Tiempo | Trigger |
+|---|---|---|---|
+| `unit-tests.yml` | unitarios, seguridad, calidad (paralelos) | ~10s | push, PR, manual |
+| `smoke-tests.yml` | single, HA | 5-10 min | push, PR, manual |
 
 ---
 

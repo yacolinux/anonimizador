@@ -81,8 +81,28 @@ anonimizador/
 ├── haproxy-503.http        # Pagina 503 con auto-reintento cada 10s
 ├── HAPROXY.md              # Guía de balanceo
 ├── OPERACION-HA.md         # Runbook single + HA
-├── testing/                # Scripts smoke test (single/HA/run_all)
-├── .github/workflows/      # CI pipeline (smoke tests)
+├── TESTING.md              # Documentación completa de tests
+├── testing/
+│   ├── conftest.py                    # Fixtures compartidos, reset de config
+│   ├── requirements-test.txt          # Dependencias de test
+│   ├── test_regex_detection.py        # Unit: detección PII por regex (20 tests)
+│   ├── test_parse_llm_response.py     # Unit: parser de output de IA (24 tests)
+│   ├── test_unicode_normalization.py  # Unit: normalización Unicode (18 tests)
+│   ├── test_replace_normalized.py     # Unit: función de reemplazo (20 tests)
+│   ├── test_filename_validation.py    # Unit: validación de filenames (17 tests)
+│   ├── test_admin_config_validation.py# Unit: config del panel admin (14 tests)
+│   ├── test_export_docx.py            # Unit: export/anonimización DOCX (8 tests)
+│   ├── test_export_pdf.py             # Unit: export/anonimización PDF (10 tests)
+│   ├── test_security.py               # Seguridad: upload, export, admin, rate limit (34 tests)
+│   ├── test_anonymization_quality.py  # Calidad con documentos sintéticos (46 tests)
+│   ├── smoke_single.sh                # Smoke: stack single
+│   ├── smoke_ha.sh                    # Smoke: stack HA
+│   ├── run_all.sh                     # Ejecuta smoke_single + smoke_ha
+│   ├── lib.sh                         # Helpers compartidos
+│   └── logs/                          # Logs de ejecución
+├── .github/workflows/
+│   ├── smoke-tests.yml     # CI: smoke tests E2E (single + HA)
+│   └── unit-tests.yml      # CI: unitarios + seguridad + calidad
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
 └── .env                    # Configuración sensible
@@ -192,8 +212,115 @@ curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json
 
 ## Testing automatizado
 
-- `testing/smoke_single.sh`: smoke para `docker-compose.yml`
-- `testing/smoke_ha.sh`: smoke para `docker-compose.ha.yml`
-- `testing/run_all.sh`: ejecuta single + HA en secuencia
-- Logs locales: `testing/logs/` (ignorado en git)
-- CI: `.github/workflows/smoke-tests.yml` ejecuta smoke tests en `push`, `pull_request` y `workflow_dispatch`
+### Ejecución
+
+```bash
+# Todos los tests (210 tests, ~2s)
+docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
+
+# Solo unitarios (130 tests)
+docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v \
+  --ignore=testing/test_security.py \
+  --ignore=testing/test_anonymization_quality.py
+
+# Solo seguridad (34 tests)
+docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_security.py -v
+
+# Solo calidad (46 tests)
+docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonymization_quality.py -v
+
+# Smoke tests E2E
+./testing/run_all.sh
+```
+
+### Tests unitarios (130 tests)
+
+Funciones internas de `app.py` testeadas en aislamiento:
+
+| Archivo | Funciones testeadas | Qué valida |
+|---|---|---|
+| `test_regex_detection.py` (20) | `detect_default_pii`, `get_pii_patterns` | Cada patrón regex contra textos específicos: DNI con/sin puntos, dirección (calle/av/domicilio/pasaje/ruta), edad, sexo, nombre con prefijo, email, palabras sensibles (abus/viol/homicid/femicid/forens/expedient/denuncia/etc.), posiciones correctas, sin falsos positivos |
+| `test_parse_llm_response.py` (24) | `parse_pii_from_output` | Todos los formatos de respuesta de IA: JSON fenced con/sin lang, inline array, pair notation con comillas, tablas markdown, malformed JSON, ANSI escape codes, fallback a bracket extraction, empty/none/whitespace, priorización fenced sobre inline |
+| `test_unicode_normalization.py` (18) | `normalize_text`, `find_word_positions` | NFKD decomposition, combining marks, acentos (Pérez→Perez), matching accent-insensitive, múltiples matches en un segmento, no match, composed vs decomposed chars |
+| `test_replace_normalized.py` (20) | `replace_normalized` | Reemplazo simple, con acentos, variantes sin acento, múltiples ocurrencias, números, dirección, replacement custom, prevención de loop infinito con keyword vacío, case insensitive |
+| `test_filename_validation.py` (17) | `is_valid_upload_filename`, `allowed_file`, `is_path_inside_uploads` | UUID válido (docx/pdf), extensión inválida (exe/txt/zip), path traversal en string, doble extensión, symlink, rutas absolutas fuera de uploads |
+| `test_admin_config_validation.py` (14) | `save_regex_config`, `load_regex_config`, `get_pii_patterns`, `get_opencode_prompt`, `get_model_config`, `is_local_model_provider` | Save/load de config, fallback a default cuando archivo falta, model_url/model_name, empty patterns, detección de proveedor local |
+| `test_export_docx.py` (8) | `anonymize_docx` | Reemplazo de keywords, preservación de non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO |
+| `test_export_pdf.py` (10) | `anonymize_pdf` | Reemplazo de keywords, preservación de non-PII, empty keywords, segmentos title/list, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO |
+
+### Tests de seguridad (34 tests)
+
+Validan que la app resista ataques comunes:
+
+| Clase | Qué testea |
+|---|---|
+| `TestFileUploadSecurity` (8) | Rechazo de exe/txt/zip, no filename, no file key, path traversal en filename, null byte, doble extensión |
+| `TestPathTraversal` (5) | `is_path_inside_uploads` con rutas absolutas fuera, dotdot, symlinks en path, ruta válida |
+| `TestExportSecurity` (7) | No filename, filename inválido, file inexistente (404), body vacío, formato inválido (400), PDF→DOCX rechazado (400) |
+| `TestAdminRateLimit` (4) | Bloqueo después de 5 intentos fallidos (429), login exitoso (200), logout limpia sesión, endpoints sin auth (401) |
+| `TestCookieAndHeaders` (2) | HttpOnly y SameSite=Lax en cookies de sesión |
+| `TestUploadsEndpoint` (2) | Acceso a archivos inexistentes retorna 404, path traversal en URL |
+| `TestAdminConfigValidation` (3) | Regex inválido se guarda sin crash, empty patterns, requiere auth para save |
+| `TestReanalyzeSecurity` (2) | Filename inválido (400), file inexistente (404) |
+| `TestReadyEndpoint` (1) | Retorna JSON con ready/busy/inflight |
+
+### Tests de calidad de anonimización (46 tests)
+
+Documentos sintéticos con PII anotada verifican que la detección regex funcione:
+
+| Categoría | Textos de prueba | Qué se espera detectar |
+|---|---|---|
+| **DNI** | `30.123.456`, `30123456` | Patrón con puntos y sin puntos |
+| **CUIL/CUIT** | `20-30123456-7` | Formato con guiones |
+| **Nombres y apellidos** | `Paciente: Juan Carlos Martínez`, `José Martínez` | Nombre con prefijo, con acentos |
+| **Domicilios** | `Calle San Martín 1234`, `Av. Corrientes 2567`, `Domicilio: Calle Pellegrini 888`, `Pasaje San Lorenzo 456`, `Ruta Nacional 8 km 45` | 5 variantes de dirección |
+| **Expedientes** | `Expediente N° 12345/2024` | Palabra "expediente" como sensible |
+| **Víctimas** | `La víctima sufrió lesiones graves`, `La víctima realizó la denuncia` | "lesiones", "denuncia" |
+| **Imputados** | `El imputado fue detenido`, `El imputado, Roberto Gómez, fue notificado` | "imputado", "detenido" |
+| **Menores** | `menor de edad`, `abuso sexual contra una menor` | "abuso" |
+| **Delitos sexuales** | `abuso sexual`, `agredida`, `amenazas de muerte`, `lesiones compatibles` | "abus", "agred", "amenaz", "lesion" |
+| **Violencia** | `Violencia de género`, `violencia doméstica` | "viol" |
+| **Fallecimientos** | `fallecimiento`, `cadaver`, `homicidio agravado`, `femicidio`, `autopsia`, `necropsia` | "fallec", "cadav", "homicid", "femicid", "autops", "necrops" |
+| **Organismos judiciales** | `pericia forense`, `identificación`, `documentación`, `condena`, `denuncia`, `testigo` | "forens", "perici", "identif", "conden", "denunci", "testig" |
+| **End-to-End** | Documento completo con 15 párrafos de PII | Detección múltiple, merge sin duplicados, anonimización DOCX |
+
+### Qué NO testean
+
+- **IA real**: los tests unitarios no invocan `opencode` ni LLMs externos. La detección por IA se valida solo a nivel de parser (`parse_pii_from_output`)
+- **Frontend**: no hay tests de JavaScript/UI. Los smoke tests bash validan el flujo upload→export pero no interacciones del usuario
+- **Documentos escaneados**: OCR no está cubierto. Solo se testean PDFs con texto extraíble y DOCX
+- **Rendimiento**: no hay tests de carga ni benchmarks. Los smoke tests usan un solo documento de prueba
+- **HA distribuido**: rate limit y sesiones se testean en 1 instancia con Redis local. No se valida comportamiento con 5 instancias concurrentes
+- **Palabras sin patrón regex**: "víctima", "menor", "cadáver" (con acento) no tienen patrones regex dedicados y no se detectan automáticamente. Los tests reflejan este comportamiento actual
+
+### CI / GitHub Actions
+
+Dos workflows independientes:
+
+| Workflow | Jobs | Tiempo | Qué valida |
+|---|---|---|---|
+| `unit-tests.yml` | `unit-tests`, `security-tests`, `quality-tests` (paralelos) | ~10s | Funciones internas, seguridad, calidad de anonimización |
+| `smoke-tests.yml` | `smoke-single`, `smoke-ha` | 5-10 min | Stack Docker completo, HAProxy, flujo upload→export |
+
+Ambos corren en `push`, `pull_request` y `workflow_dispatch`.
+
+### Fixtures compartidos (`conftest.py`)
+
+| Helper | Descripción |
+|---|---|
+| `reset_config_file()` | Resetea `regex_patterns.json` a defaults y limpia Redis config key (DB 15) |
+| `pytest.fixture(autouse=True)` | Ejecuta `reset_config_file()` antes de cada test |
+| `create_synthetic_docx()` | Genera DOCX con párrafos, headings, listas y tablas |
+| `create_synthetic_pdf()` | Genera PDF con texto plano |
+| `pii_doc_paragraphs()` | Retorna 15 párrafos sintéticos con todos los tipos de PII |
+| `cleanup_temp_files()` | Limpia archivos temporales creados en tests |
+
+### Configuración de test
+
+El `conftest.py` configura el ambiente:
+
+- `FLASK_SECRET_KEY`: `test-secret-key`
+- `ADMIN_USER`: `admin` / `ADMIN_PASS`: `testpass`
+- `REDIS_URL`: `redis://redis:6379/15` (DB aislada para tests)
+- `REDIS_CONFIG_KEY`: `anonimizador:config:test`
+- `SESSION_BACKEND`: `cookie`

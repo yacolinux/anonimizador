@@ -250,6 +250,27 @@ DEFAULT_PATTERNS_DATA = {
         {"pattern": r"\b(?:masculino|femenino|var[oó]n|mujer|hombre|femenina|masculina)\b", "type": "sexo"},
         {"pattern": r"(?:paciente|nombre|apellido|señor|señora|sr[a]?\.?)\s*:?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+", "type": "nombre"},
         {"pattern": r"\b(?:[\w.-]+@[\w.-]+\.\w{2,})\b", "type": "email"},
+        {"pattern": r"\b(?:abus\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:viol\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:fallec\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:homicid\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:femicid\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:lesion\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:amenaz\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:agred\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:imput\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:conden\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:deten\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:testig\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:denunci\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:perici\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:forens\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:cadav\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:autops\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:necrops\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:identif\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:document\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:expedient\w*)\b", "type": "sensible"},
     ],
     "prompt": (
         "Analiza este documento y determina TODAS las palabras o conjuntos de palabras "
@@ -756,6 +777,8 @@ def find_word_positions(segments, keywords):
 def replace_normalized(text, kw_word, replacement):
     norm_text = normalize_text(text).lower()
     norm_kw = normalize_text(kw_word).lower()
+    if not norm_kw:
+        return text
     start = 0
     while True:
         idx = norm_text.find(norm_kw, start)

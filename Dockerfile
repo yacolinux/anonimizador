@@ -13,8 +13,9 @@ RUN apt-get update && apt-get install -y \
     && npm install -g opencode-ai@latest \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt testing/requirements-test.txt .
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements-test.txt
 
 COPY . .
 
