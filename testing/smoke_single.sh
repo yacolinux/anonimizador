@@ -7,9 +7,11 @@ setup_log "smoke-single"
 
 cd "$ROOT_DIR"
 
-run "sudo docker compose up -d --build"
+SMOKE_REDIS_CONFIG_KEY="anonimizador:config:smoke-single:$(date +%s)"
+
+run "REDIS_CONFIG_KEY=$SMOKE_REDIS_CONFIG_KEY sudo docker compose up -d --build"
 run "sleep 5"
-run "sudo docker compose ps"
+run "REDIS_CONFIG_KEY=$SMOKE_REDIS_CONFIG_KEY sudo docker compose ps"
 
 assert_http_code "http://localhost:5000/ready" "200" "/tmp/anon_single_ready.txt"
 cat /tmp/anon_single_ready.txt

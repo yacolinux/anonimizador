@@ -1,6 +1,6 @@
 # Testing
 
-Suite de tests para el Anonimizador de Documentos. 210 tests en 3 categorías: unitarios, seguridad y calidad de anonimización.
+Suite de tests para el Anonimizador de Documentos. 215 tests en 3 categorías: unitarios, seguridad y calidad de anonimización.
 
 ## Estructura
 

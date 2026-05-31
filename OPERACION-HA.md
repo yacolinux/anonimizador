@@ -30,7 +30,7 @@ docker compose -f docker-compose.ha.yml up --build -d
 - `REDIS_URL=redis://redis:6379/0`
 - `REDIS_CONFIG_KEY=anonimizador:config`
 - `READY_MAX_INFLIGHT=2`
-- `SESSION_COOKIE_SECURE=1` (si hay HTTPS)
+- `SESSION_COOKIE_SECURE=0` en local HTTP / `1` si hay HTTPS
 - `UPLOAD_TTL_SECONDS=86400`
 - `LOGIN_WINDOW_SECONDS=300`
 - `LOGIN_MAX_ATTEMPTS=5`
@@ -48,6 +48,27 @@ docker compose -f docker-compose.ha.yml up --build -d
 
 - `SESSION_BACKEND=cookie`:
   - modo fallback/local sin dependencia de Redis para sesion
+
+## 3.1) Ollama remoto en HA (servidor privado)
+
+Si vas a usar un Ollama remoto (API OpenAI-compatible) con multiples instancias `web`, usa estos criterios:
+
+- Configurar desde panel admin (`/admin/config`) en tab **Elegir Modelo**:
+  - `model_url`: endpoint remoto con `/v1` (ej: `https://ollama.empresa.local/v1`)
+  - `model_name`: formato `ollama/modelo` (ej: `ollama/llama3.1:8b`)
+  - `api_key`: token del gateway remoto (si aplica)
+  - `opencode_command`: mantener template default salvo necesidad puntual
+- DNS/red:
+  - el host remoto debe ser resolvible desde **todas** las instancias `web1..webN`
+  - evitar `localhost` en `model_url` dentro de contenedores HA
+- Timeouts y capacidad:
+  - `opencode` corta a 120s por request IA; si el modelo es pesado, ajustar carga/concurrencia
+  - monitorear `ai_status` (`timeout`, `busy`, `unavailable`) para detectar saturacion
+- Reintentos:
+  - el frontend ya implementa reintento IA y modo `regex_only` cuando proveedor esta ocupado/no disponible
+  - para entornos con latencia alta, preferir modelos mas livianos o mas capacidad en el servidor Ollama
+
+Ejemplo completo parametro por parametro: ver `OLLAMA.md`.
 
 ## 4) HAProxy: reglas recomendadas
 

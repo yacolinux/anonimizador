@@ -31,7 +31,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - Login con credenciales configurables en `.env`
   - **Prompt**: editar el prompt que se envía a la IA
   - **Patrones Regex**: editar los patrones de detección en formato JSON
-  - **Elegir Modelo**: configurar API endpoint URL y nombre del modelo (soporta modelos locales como Ollama)
+  - **Elegir Modelo**: configurar API endpoint URL, nombre del modelo, API key y comando completo de opencode (soporta modelos locales/remotos como Ollama y experimentación de flags), con botón para restaurar comando default
 - **Normalización Unicode**: maneja acentos correctamente (Pérez ↔ Perez)
 - **Corre en Docker Compose** con un solo comando
 - **Listo para balanceo/HA**: endpoint `/ready` para que HAProxy detecte instancias ocupadas
@@ -86,7 +86,7 @@ docker compose logs --tail=200 web redis
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
 | `ADMIN_PASS` | Contraseña del panel admin | `cambiar-esta-clave` |
 | `FLASK_SECRET_KEY` | Secret key para sesiones Flask | `cualquier-string-seguro` |
-| `SESSION_COOKIE_SECURE` | Cookie segura de sesión (HTTPS) | `1` |
+| `SESSION_COOKIE_SECURE` | Cookie segura de sesión (`0` local HTTP, `1` prod HTTPS) | `0` |
 | `SESSION_BACKEND` | Backend de sesiones (`redis` o `cookie`) | `redis` |
 | `REDIS_URL` | URL de Redis compartido (single/HA) | `redis://redis:6379/0` |
 | `REDIS_CONFIG_KEY` | Key Redis para config compartida | `anonimizador:config` |
@@ -134,7 +134,7 @@ anonimizador/
 ├── HAPROXY.md              # Guia de balanceo y health checks
 ├── OPERACION-HA.md         # Runbook single-instance + HA
 ├── TESTING.md              # Documentación completa de tests (qué testea y qué NO)
-├── testing/                # 210 tests: unitarios, seguridad, calidad + smoke bash
+├── testing/                # 215 tests: unitarios, seguridad, calidad + smoke bash
 ├── .github/workflows/      # CI: unit-tests.yml + smoke-tests.yml
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
@@ -163,7 +163,7 @@ anonimizador/
 | `/admin/login` | POST | Login panel admin |
 | `/admin/logout` | POST | Logout panel admin |
 | `/admin/status` | GET | Estado de sesión admin |
-| `/admin/config` | GET | Obtener config (patrones, prompt, modelo) |
+| `/admin/config` | GET | Obtener config (patrones, prompt, modelo, API key, comando opencode) |
 | `/admin/config` | POST | Guardar config |
 
 #### `/upload` response
@@ -245,6 +245,10 @@ Configurables en `.env`:
 3. **Elegir Modelo**: Configurar el modelo LLM:
    - **API Endpoint URL**: URL base del proveedor (ej: `https://api.openrouter.ai/v1` o `http://localhost:11434/v1` para Ollama)
    - **Nombre del modelo**: Formato `provider/modelo` (ej: `opencode/deepseek-v4-flash-free`)
+   - **API Key**: clave del proveedor para ese endpoint/modelo (si se deja vacía, usa `OPENAI_API_KEY` del entorno)
+   - **Comando opencode**: línea de comando completa (usa placeholders `{message}`, `{model}`, `{file}`)
+
+> Nota: para configurar **Ollama remoto privado** (servidor propio con endpoint OpenAI-compatible), ver ejemplo completo y recomendaciones en `OLLAMA.md`.
 
 Los cambios se aplican inmediatamente al siguiente documento cargado.
 
@@ -338,7 +342,7 @@ curl -s http://localhost:8404/stats
 
 ## 🧪 Testing
 
-El proyecto tiene **210 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
+El proyecto tiene **215 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
 
 ### Qué se testea
 

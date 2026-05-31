@@ -31,10 +31,17 @@ def test_load_default_config_when_file_missing():
 def test_save_config_with_model_info():
     patterns = [{"pattern": "\\d+", "type": "numero"}]
     prompt = "Analiza {text}"
-    anon_app.save_regex_config(patterns, prompt, model_url="http://localhost:11434/v1", model_name="llama3")
+    anon_app.save_regex_config(
+        patterns,
+        prompt,
+        model_url="http://localhost:11434/v1",
+        model_name="llama3",
+        api_key="sk-test-123",
+    )
     config = anon_app.load_regex_config()
     assert config['model_url'] == "http://localhost:11434/v1"
     assert config['model_name'] == "llama3"
+    assert config['api_key'] == "sk-test-123"
 
 def test_save_config_without_model_info():
     patterns = DEFAULT_PATTERNS_DATA['patterns']
@@ -98,6 +105,7 @@ def test_get_model_config_defaults():
     config = anon_app.get_model_config()
     assert 'model_url' in config
     assert 'model_name' in config
+    assert 'api_key' in config
 
 def test_get_current_model():
     model = anon_app.get_current_model()

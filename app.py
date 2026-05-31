@@ -9,6 +9,7 @@ import unicodedata
 import subprocess
 import tempfile
 import threading
+import shlex
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 from io import BytesIO
@@ -352,12 +353,27 @@ def get_opencode_prompt():
     return config.get('prompt', DEFAULT_PATTERNS_DATA['prompt'])
 
 
-def save_regex_config(patterns, prompt, model_url=None, model_name=None):
+def save_regex_config(
+    patterns,
+    prompt,
+    model_url=None,
+    model_name=None,
+    opencode_command=None,
+    api_key=None,
+):
     data = {"patterns": patterns, "prompt": prompt}
     if model_url is not None:
         data["model_url"] = model_url
     if model_name is not None:
         data["model_name"] = model_name
+    if opencode_command is not None:
+        data["opencode_command"] = opencode_command
+    elif "opencode_command" in load_regex_config():
+        data["opencode_command"] = load_regex_config().get("opencode_command")
+    if api_key is not None:
+        data["api_key"] = api_key
+    elif "api_key" in load_regex_config():
+        data["api_key"] = load_regex_config().get("api_key")
     if redis_available:
         try:
             redis_client.set(REDIS_CONFIG_KEY, json.dumps(data, ensure_ascii=False))
@@ -373,8 +389,18 @@ def get_model_config():
     config = load_regex_config()
     return {
         'model_url': config.get('model_url', os.environ.get('OPENAI_BASE_URL', '')),
-        'model_name': config.get('model_name', os.environ.get('MODEL_NAME', ''))
+        'model_name': config.get('model_name', os.environ.get('MODEL_NAME', '')),
+        'opencode_command': config.get(
+            'opencode_command',
+            'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'
+        ),
+        'api_key': config.get('api_key', os.environ.get('OPENAI_API_KEY', '')),
     }
+
+
+def get_opencode_command_template():
+    cfg = get_model_config()
+    return cfg['opencode_command']
 
 
 def get_current_model():
@@ -385,6 +411,11 @@ def get_current_model():
 def get_current_base_url():
     cfg = get_model_config()
     return cfg['model_url'] or os.environ.get('OPENAI_BASE_URL', '')
+
+
+def get_current_api_key():
+    cfg = get_model_config()
+    return cfg['api_key'] or os.environ.get('OPENAI_API_KEY', '')
 
 
 def is_local_model_provider():
@@ -657,6 +688,15 @@ def call_opencode_for_pii(text, wait_seconds=None):
         tmp_path = f.name
 
     short_msg = 'Analiza el archivo adjunto y seguí las instrucciones'
+    command_template = (get_opencode_command_template() or '').strip()
+    if not command_template:
+        command_template = 'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'
+    command_filled = (
+        command_template
+        .replace('{message}', short_msg)
+        .replace('{model}', model_id)
+        .replace('{file}', tmp_path)
+    )
     queue_notice = None
     slot_key = None
     slot_token = None
@@ -685,18 +725,18 @@ def call_opencode_for_pii(text, wait_seconds=None):
             logger.info(queue_notice)
 
     try:
-        logger.info('Ejecutando opencode run --model opencode/%s', model_id)
+        logger.info('Ejecutando comando opencode personalizado')
+        cmd_args = shlex.split(command_filled)
+        run_env = {**os.environ, 'HOME': os.environ.get('HOME', '/root')}
+        selected_api_key = (get_current_api_key() or '').strip()
+        if selected_api_key:
+            run_env['OPENAI_API_KEY'] = selected_api_key
         result = subprocess.run(
-            [
-                'opencode', 'run', short_msg,
-                '--model', f'opencode/{model_id}',
-                '--dangerously-skip-permissions',
-                '--file', tmp_path,
-            ],
+            cmd_args,
             capture_output=True,
             text=True,
             timeout=120,
-            env={**os.environ, 'HOME': os.environ.get('HOME', '/root')}
+            env=run_env,
         )
 
         full_output = (result.stdout or '') + '\n' + (result.stderr or '')
@@ -1188,7 +1228,12 @@ def admin_get_config():
         'patterns': config.get('patterns', []),
         'prompt': config.get('prompt', ''),
         'model_url': config.get('model_url', os.environ.get('OPENAI_BASE_URL', '')),
-        'model_name': config.get('model_name', os.environ.get('MODEL_NAME', ''))
+        'model_name': config.get('model_name', os.environ.get('MODEL_NAME', '')),
+        'api_key': config.get('api_key', os.environ.get('OPENAI_API_KEY', '')),
+        'opencode_command': config.get(
+            'opencode_command',
+            'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'
+        ),
     })
 
 
@@ -1239,6 +1284,31 @@ def validate_config_model_url(model_url):
     return None
 
 
+def validate_opencode_command(opencode_command):
+    if opencode_command is None:
+        return None
+    if not isinstance(opencode_command, str):
+        return 'opencode_command debe ser un string'
+    if len(opencode_command) > 1000:
+        return 'opencode_command demasiado largo (máx 1000 chars)'
+    text = opencode_command.strip()
+    if not text:
+        return None
+    if '{file}' not in text:
+        return 'opencode_command debe incluir placeholder {file}'
+    return None
+
+
+def validate_config_api_key(api_key):
+    if api_key is None:
+        return None
+    if not isinstance(api_key, str):
+        return 'api_key debe ser un string'
+    if len(api_key) > 500:
+        return 'api_key demasiado larga (máx 500 chars)'
+    return None
+
+
 @app.route('/admin/config', methods=['POST'])
 @admin_required
 def admin_save_config():
@@ -1249,6 +1319,8 @@ def admin_save_config():
     prompt = data.get('prompt', '')
     model_url = data.get('model_url')
     model_name = data.get('model_name')
+    api_key = data.get('api_key')
+    opencode_command = data.get('opencode_command')
 
     err = validate_config_patterns(patterns)
     if err:
@@ -1259,9 +1331,15 @@ def admin_save_config():
     err = validate_config_model_url(model_url)
     if err:
         return jsonify({'error': err}), 400
+    err = validate_opencode_command(opencode_command)
+    if err:
+        return jsonify({'error': err}), 400
+    err = validate_config_api_key(api_key)
+    if err:
+        return jsonify({'error': err}), 400
 
     try:
-        save_regex_config(patterns, prompt, model_url, model_name)
+        save_regex_config(patterns, prompt, model_url, model_name, opencode_command, api_key)
         return jsonify({'ok': True})
     except Exception as e:
         logger.error('Error guardando config: %s', e)

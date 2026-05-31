@@ -258,6 +258,15 @@ class TestUploadsEndpoint:
 
 class TestAdminConfigValidation:
 
+    def test_get_config_includes_api_key_field(self, client):
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        resp = client.get('/admin/config')
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert 'api_key' in body
+
     def test_save_invalid_regex_pattern(self, client):
         client.post('/admin/login', json={
             'user': 'admin', 'password': 'testpass'
@@ -310,6 +319,38 @@ class TestAdminConfigValidation:
             'model_url': 'https://api.example.com/v1',
         })
         assert resp.status_code == 200
+
+    def test_save_and_get_api_key_roundtrip(self, client):
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        value = 'sk-or-v1-roundtrip-test'
+        resp = client.post('/admin/config', json={
+            'patterns': [{'pattern': '\\d+', 'type': 'num'}],
+            'prompt': 'test prompt',
+            'model_url': 'https://api.example.com/v1',
+            'model_name': 'opencode/deepseek-v4-flash-free',
+            'api_key': value,
+            'opencode_command': 'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}',
+        })
+        assert resp.status_code == 200
+
+        resp = client.get('/admin/config')
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body.get('api_key') == value
+
+    def test_save_invalid_api_key_type(self, client):
+        client.post('/admin/login', json={
+            'user': 'admin', 'password': 'testpass'
+        })
+        resp = client.post('/admin/config', json={
+            'patterns': [],
+            'prompt': 'test',
+            'api_key': 12345,
+        })
+        assert resp.status_code == 400
+        assert 'api_key debe ser un string' in resp.get_json().get('error', '')
 
     def test_admin_config_requires_auth(self, client):
         resp = client.post('/admin/config', json={

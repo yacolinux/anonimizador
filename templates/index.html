@@ -18,7 +18,7 @@
     <div class="upload-content" id="upload-content">
       <div class="upload-icon">&#x1F4C4;</div>
       <p class="upload-text">Arrastrá un archivo aquí o hacé clic</p>
-      <p class="upload-hint">PDF o DOCX &middot; Máx 50MB</p>
+      <p class="upload-hint">PDF o DOCX &middot; Máx 100MB</p>
       <button class="upload-btn" id="upload-btn">Cargar documento</button>
       <input type="file" id="file-input" accept=".pdf,.docx" hidden>
     </div>
@@ -142,6 +142,12 @@
         <input type="text" id="admin-model-url" placeholder="https://api.openrouter.ai/v1">
         <label for="admin-model-name">Nombre del modelo:</label>
         <input type="text" id="admin-model-name" placeholder="opencode/deepseek-v4-flash-free">
+        <label for="admin-api-key">API Key del proveedor:</label>
+        <input type="text" id="admin-api-key" placeholder="sk-or-v1-..." autocomplete="off">
+        <label for="admin-opencode-command">Comando completo de opencode:</label>
+        <textarea id="admin-opencode-command" rows="4" placeholder='opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'></textarea>
+        <p class="admin-help-text">Placeholders disponibles: <code>{message}</code>, <code>{model}</code>, <code>{file}</code>. Ejemplo: <code>opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}</code></p>
+        <button class="admin-secondary-btn" id="admin-reset-opencode-command" type="button">Restaurar comando por defecto</button>
         <button class="btn-primary" id="admin-save-model">Guardar Modelo</button>
       </div>
       <button class="admin-logout" id="admin-logout-btn">Cerrar sesión</button>

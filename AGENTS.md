@@ -28,7 +28,7 @@ cp .env.example .env
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
 | `ADMIN_PASS` | Contraseña del panel admin | `cambiar-esta-clave` |
 | `FLASK_SECRET_KEY` | Secret key para sesiones Flask | `cualquier-string-seguro` |
-| `SESSION_COOKIE_SECURE` | Marca cookie de sesión como segura (HTTPS) | `1` |
+| `SESSION_COOKIE_SECURE` | Cookie de sesión segura (`0` local HTTP, `1` prod HTTPS) | `0` |
 | `READY_MAX_INFLIGHT` | Umbral de requests concurrentes para marcar busy en `/ready` | `2` |
 | `SESSION_BACKEND` | Backend de sesiones (`redis` o `cookie`) | `redis` |
 | `REDIS_URL` | URL de Redis compartido (single/HA) | `redis://redis:6379/0` |
@@ -64,8 +64,8 @@ cp .env.example .env
 | `/admin/login` | POST | Login admin. Body: `{user, password}` |
 | `/admin/logout` | POST | Cerrar sesión admin |
 | `/admin/status` | GET | Estado de sesión. Retorna `{logged_in: bool}` |
-| `/admin/config` | GET | Obtener configuración actual. Retorna `{patterns, prompt, model_url, model_name}` |
-| `/admin/config` | POST | Guardar configuración. Body: `{patterns[], prompt, model_url, model_name}` |
+| `/admin/config` | GET | Obtener configuración actual. Retorna `{patterns, prompt, model_url, model_name, api_key, opencode_command}` |
+| `/admin/config` | POST | Guardar configuración. Body: `{patterns[], prompt, model_url, model_name, api_key, opencode_command}` |
 
 ## Arquitectura
 
@@ -135,7 +135,7 @@ anonimizador/
 - **Botón "Copiar Texto Anonimizado"**: copia el texto con reemplazos al portapapeles
 - **Botón "Ver Razonamiento"**: modal con output completo de la IA
 - **Flujo IA local ocupada**: popup "Proveedor ocupado", reintento cada 5s, botón "Continuar sin IA" y botón "Reintentar con IA"
-- **Panel admin**: botón discreto ⚙ en esquina inferior izquierda, login → tabs (Prompt, Patrones Regex, Elegir Modelo)
+- **Panel admin**: botón discreto ⚙ en esquina inferior izquierda, login → tabs (Prompt, Patrones Regex, Elegir Modelo con `model_url`, `model_name`, `api_key`, `opencode_command` y botón restaurar default)
 
 ## Detección de PII
 
@@ -156,7 +156,7 @@ Posiciones combinadas (sin duplicados) ordenadas por segmento.
 
 ## Configuración de modelo
 
-El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el panel admin (tab "Elegir Modelo"). La configuración se guarda en `regex_patterns.json` con campos `model_url` y `model_name`.
+El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el panel admin (tab "Elegir Modelo"). La configuración se guarda en `regex_patterns.json` con campos `model_url`, `model_name`, `api_key` y `opencode_command`.
 
 - **Formato**: `provider/modelo` (ej: `opencode/deepseek-v4-flash-free`)
 - **Provider `opencode`**: usa la API key configurada en `auth.json` (generado por `entrypoint.sh` desde `OPENAI_API_KEY`)
@@ -168,7 +168,7 @@ El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el 
 - **Texto de reemplazo default**: `[REDACTADO]` (configurable en el frontend)
 - **Export PDF → DOCX**: no permitido (python-docx no puede abrir PDFs). El frontend deshabilita la opción DOCX y muestra un mensaje explicativo.
 - **Timeout subprocess**: 120s para opencode (gunicorn timeout 180s)
-- **Subida máxima**: 50MB
+- **Subida máxima**: 100MB por defecto (`MAX_UPLOAD_MB`)
 - **Auth opencode**: `entrypoint.sh` escribe `~/.local/share/opencode/auth.json` si `OPENAI_API_KEY` está definida
 - **HA / balanceo**: endpoint `/ready` + `READY_MAX_INFLIGHT` para que HAProxy enrute sólo a instancias libres
 - **Sticky admin**: mantener afinidad `/admin/*` en HAProxy
@@ -219,7 +219,7 @@ curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json
 ### Ejecución
 
 ```bash
-# Todos los tests (210 tests, ~2s)
+# Todos los tests (215 tests, ~2s)
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
 
 # Solo unitarios (130 tests)
@@ -250,7 +250,7 @@ Funciones internas de `app.py` testeadas en aislamiento:
 | `test_filename_validation.py` (17) | `is_valid_upload_filename`, `allowed_file`, `is_path_inside_uploads` | UUID válido (docx/pdf), extensión inválida (exe/txt/zip), path traversal en string, doble extensión, symlink, rutas absolutas fuera de uploads |
 | `test_admin_config_validation.py` (14) | `save_regex_config`, `load_regex_config`, `get_pii_patterns`, `get_opencode_prompt`, `get_model_config`, `is_local_model_provider` | Save/load de config, fallback a default cuando archivo falta, model_url/model_name, empty patterns, detección de proveedor local |
 | `test_export_docx.py` (8) | `anonymize_docx` | Reemplazo de keywords, preservación de non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO |
-| `test_export_pdf.py` (10) | `anonymize_pdf` | Reemplazo de keywords, preservación de non-PII, empty keywords, segmentos title/list, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO |
+| `test_export_pdf.py` (11) | `anonymize_pdf`, `extract_text_pdf` | Reemplazo de keywords, preservación de non-PII, empty keywords, segmentos title/list, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO, fallback OCR con PDF escaneado |
 
 ### Tests de seguridad (34 tests)
 

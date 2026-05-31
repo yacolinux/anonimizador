@@ -865,6 +865,31 @@ body {
 .admin-tab-content textarea:focus {
   border-color: var(--accent-border);
 }
+.admin-help-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.admin-help-text code {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 4px;
+  color: var(--text-primary);
+}
+.admin-secondary-btn {
+  align-self: flex-start;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--border-color2);
+  color: var(--text-body);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.admin-secondary-btn:hover {
+  background: var(--hover-bg);
+}
 .admin-tab-content .btn-primary {
   align-self: flex-end;
   padding: 8px 20px;

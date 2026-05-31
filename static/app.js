@@ -503,9 +503,13 @@ const adminLogoutBtn = document.getElementById('admin-logout-btn');
 const adminTabs = document.querySelectorAll('.admin-tab');
 const adminModelUrlInput = document.getElementById('admin-model-url');
 const adminModelNameInput = document.getElementById('admin-model-name');
+const adminApiKeyInput = document.getElementById('admin-api-key');
+const adminOpencodeCommandInput = document.getElementById('admin-opencode-command');
+const adminResetOpencodeCommandBtn = document.getElementById('admin-reset-opencode-command');
 const adminSaveModelBtn = document.getElementById('admin-save-model');
 
 let adminConfig = null;
+const DEFAULT_OPENCODE_COMMAND = 'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}';
 
 adminTrigger.addEventListener('click', () => {
   adminModal.hidden = false;
@@ -561,12 +565,24 @@ adminLogoutBtn.addEventListener('click', async () => {
 async function loadAdminConfig() {
   try {
     const res = await fetch('/admin/config');
+    if (res.status === 401) {
+      adminPanel.hidden = true;
+      adminLoginForm.hidden = false;
+      adminLoginError.textContent = 'Sesion admin no activa. Si estas en HTTP local, revisa SESSION_COOKIE_SECURE=0 y reinicia.';
+      return;
+    }
     const data = await res.json();
+    if (!res.ok) {
+      showToast('Error cargando configuración admin');
+      return;
+    }
     adminConfig = data;
     adminPromptTextarea.value = data.prompt || '';
     adminPatternsTextarea.value = JSON.stringify(data.patterns, null, 2);
     adminModelUrlInput.value = data.model_url || '';
     adminModelNameInput.value = data.model_name || '';
+    adminApiKeyInput.value = data.api_key || '';
+    adminOpencodeCommandInput.value = data.opencode_command || '';
   } catch (err) {
     showToast('Error cargando configuración');
   }
@@ -593,7 +609,14 @@ adminSavePromptBtn.addEventListener('click', async () => {
     const res = await fetch('/admin/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, patterns: adminConfig.patterns })
+      body: JSON.stringify({
+        prompt,
+        patterns: adminConfig.patterns,
+        model_url: adminConfig.model_url,
+        model_name: adminConfig.model_name,
+        api_key: adminConfig.api_key,
+        opencode_command: adminConfig.opencode_command
+      })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
@@ -623,7 +646,14 @@ adminSavePatternsBtn.addEventListener('click', async () => {
     const res = await fetch('/admin/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patterns, prompt: adminConfig.prompt, model_url: adminConfig.model_url, model_name: adminConfig.model_name })
+      body: JSON.stringify({
+        patterns,
+        prompt: adminConfig.prompt,
+        model_url: adminConfig.model_url,
+        model_name: adminConfig.model_name,
+        api_key: adminConfig.api_key,
+        opencode_command: adminConfig.opencode_command
+      })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
@@ -640,6 +670,8 @@ adminSavePatternsBtn.addEventListener('click', async () => {
 adminSaveModelBtn.addEventListener('click', async () => {
   const modelUrl = adminModelUrlInput.value.trim();
   const modelName = adminModelNameInput.value.trim();
+  const apiKey = adminApiKeyInput.value.trim();
+  const opencodeCommand = adminOpencodeCommandInput.value.trim();
   if (!modelUrl || !modelName) {
     showToast('Completá ambos campos');
     return;
@@ -648,17 +680,37 @@ adminSaveModelBtn.addEventListener('click', async () => {
     const res = await fetch('/admin/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patterns: adminConfig.patterns, prompt: adminConfig.prompt, model_url: modelUrl, model_name: modelName })
+      body: JSON.stringify({
+        patterns: adminConfig.patterns,
+        prompt: adminConfig.prompt,
+        model_url: modelUrl,
+        model_name: modelName,
+        api_key: apiKey,
+        opencode_command: opencodeCommand
+      })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
       showToast('Modelo guardado correctamente');
       adminConfig.model_url = modelUrl;
       adminConfig.model_name = modelName;
+      adminConfig.api_key = apiKey;
+      adminConfig.opencode_command = opencodeCommand;
     } else {
       showToast('Error: ' + (data.error || 'No se pudo guardar'));
     }
   } catch (err) {
     showToast('Error de conexión');
   }
+});
+
+adminResetOpencodeCommandBtn.addEventListener('click', () => {
+  const current = (adminOpencodeCommandInput.value || '').trim();
+  const target = DEFAULT_OPENCODE_COMMAND;
+  if (current && current !== target) {
+    const ok = window.confirm('Vas a sobrescribir el comando actual con el valor por defecto. ¿Continuar?');
+    if (!ok) return;
+  }
+  adminOpencodeCommandInput.value = DEFAULT_OPENCODE_COMMAND;
+  showToast('Comando opencode restaurado al valor por defecto');
 });

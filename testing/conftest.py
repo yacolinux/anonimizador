@@ -18,7 +18,8 @@ os.environ['SESSION_COOKIE_SECURE'] = '0'
 import sys
 print(f'[CONFTEST] Setting REDIS_URL override', file=sys.stderr)
 os.environ['REDIS_URL'] = 'redis://redis:6379/15'
-os.environ['REDIS_CONFIG_KEY'] = 'anonimizador:config:test'
+_TEST_REDIS_CONFIG_KEY = f"anonimizador:config:test:{uuid.uuid4()}"
+os.environ['REDIS_CONFIG_KEY'] = _TEST_REDIS_CONFIG_KEY
 
 print(f'[CONFTEST] REDIS_URL={os.environ["REDIS_URL"]}, REDIS_CONFIG_KEY={os.environ["REDIS_CONFIG_KEY"]}', file=sys.stderr)
 sys.stderr.flush()

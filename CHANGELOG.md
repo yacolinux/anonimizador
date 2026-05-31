@@ -9,16 +9,34 @@
 - **Test unitario `test_anonymize_pdf_scanned_pdf_ocr_fallback`**: valida que el fallback OCR se dispare y exporte correctamente con `scansmpl.pdf`.
 - **Job `unit-tests` en GitHub Actions**: corre `pytest testing/ -v` automáticamente en cada push/PR. Incluye `.env` temporal para CI.
 - **Archivo `ACTIONS.md`**: documentación completa de workflows de CI/CD.
+- **Panel admin (Elegir Modelo)**: nuevo campo `opencode_command` para definir la línea completa de comando de opencode con placeholders `{message}`, `{model}`, `{file}`.
+- **Panel admin (UX)**: botón `Restaurar comando por defecto` con confirmación antes de sobrescribir un comando personalizado.
+- **Panel admin (Elegir Modelo)**: nuevo campo `api_key` configurable por modelo/proveedor en `/admin/config` y `regex_patterns.json`.
+- **Tests de endpoint admin config**: cobertura de `api_key` en `testing/test_security.py` (presencia en GET, roundtrip POST/GET, validación de tipo).
+- **Guía `OLLAMA.md`**: documentación paso a paso para configurar Ollama remoto privado (endpoint, modelo, API key y comando opencode).
 
 ### Fixed
 - **Bug en `/export` PDF**: `extract_text()` devuelve tupla `(segments, used_ocr)`. Se corrigió desempaquetado en `anonymize_pdf()` para evitar `TypeError`.
-- **GitHub Actions `unit-tests`**: agregado paso `cp .env.example .env` antes de ejecutar `docker compose run` para evitar fallo por archivo faltante.
+- **GitHub Actions (`unit-tests.yml` y `smoke-tests.yml`)**: creación explícita de `.env` temporal en cada job para evitar fallo `env file .../.env not found`.
+- **UX panel admin**: si `/admin/config` responde `401`, ahora la UI vuelve al login y muestra mensaje claro sobre `SESSION_COOKIE_SECURE=0` en HTTP local.
+- **Panel admin “Prompt/Patrones vacíos” tras pruebas**: se evitó contaminación de Redis productivo usando keys de config aisladas en tests/smoke (`REDIS_CONFIG_KEY` efímero).
 
 ### Changed
 - **Límite de subida**: `MAX_CONTENT_LENGTH` ahora configurable vía `MAX_UPLOAD_MB` (default 100MB).
 - **Dependencias Docker**: `tesseract-ocr`, `tesseract-ocr-spa`, `poppler-utils` instalados en `Dockerfile`.
 - **Dependencias Python**: `pdf2image`, `pytesseract` agregados a `requirements.txt`.
-- **Documentación actualizada**: `README.md`, `AGENTS.md`, `testing/README.md`, `ACTIONS.md`.
+- **`SESSION_COOKIE_SECURE`**: defaults/documentación alineados para desarrollo local (`0`) y producción HTTPS (`1`) en `.env.example`, `README.md`, `AGENTS.md`, `OPERACION-HA.md`.
+- **Documentación actualizada**: `README.md`, `AGENTS.md`, `testing/README.md`, `ACTIONS.md`, `CHANGELOG.md`.
+- **Persistencia de config admin**: `regex_patterns.json` y `/admin/config` ahora incluyen `opencode_command`.
+- **Ejecución de OpenCode**: `call_opencode_for_pii()` ahora usa `api_key` configurada en admin (fallback a `OPENAI_API_KEY`).
+- **UI API key en admin**: el campo de API key se muestra en texto plano en “Elegir Modelo” (según requerimiento operativo).
+- **Scripts smoke**: `testing/smoke_single.sh` y `testing/smoke_ha.sh` exportan `REDIS_CONFIG_KEY` aislada para no pisar config compartida.
+- **Documentación actualizada**: `README.md` (nota de soporte Ollama) y `OPERACION-HA.md` (sección Ollama remoto en HA).
+
+### Incident
+- **Config admin “vacía” en UI**: se detectó que Redis mantenía una config de prueba (`prompt: "test"`, patrón `\\d+`) en la key `anonimizador:config`.
+- **Resolución aplicada**: se limpió la key en Redis y se reinició `web`; el backend rebootstrapió la configuración por defecto desde `regex_patterns.json`.
+- **Lección operativa**: en entornos de prueba, evitar persistir configs de test en Redis compartido o resetear `anonimizador:config` al finalizar tests manuales.
 
 ---
 
