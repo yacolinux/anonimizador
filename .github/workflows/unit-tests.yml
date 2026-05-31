@@ -12,17 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,7 +29,7 @@ jobs:
         run: >
           docker compose run --rm
           -e SESSION_BACKEND=cookie
-          -e REDIS_URL=redis://redis:6379/15
+          -e REDIS_PORT=16379
           web
           pytest testing/ -v --tb=short
           --ignore=testing/smoke_single.sh
@@ -59,17 +48,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,7 +65,7 @@ jobs:
         run: >
           docker compose run --rm
           -e SESSION_BACKEND=cookie
-          -e REDIS_URL=redis://redis:6379/15
+          -e REDIS_PORT=16379
           web
           pytest testing/test_security.py -v --tb=short
 
@@ -102,17 +80,6 @@ jobs:
   quality-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -131,7 +98,7 @@ jobs:
         run: >
           docker compose run --rm
           -e SESSION_BACKEND=cookie
-          -e REDIS_URL=redis://redis:6379/15
+          -e REDIS_PORT=16379
           web
           pytest testing/test_anonymization_quality.py -v --tb=short
 
