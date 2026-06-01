@@ -53,6 +53,49 @@ LOGIN_WINDOW_SECONDS = int(os.environ.get('LOGIN_WINDOW_SECONDS', '300'))
 SESSION_BACKEND = os.environ.get('SESSION_BACKEND', 'redis').lower()
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 REDIS_CONFIG_KEY = os.environ.get('REDIS_CONFIG_KEY', 'anonimizador:config')
+
+_api_call_log = []
+_MAX_API_LOG_ENTRIES = 100
+_API_LOGS_REDIS_KEY = 'anonimizador:api_logs'
+
+
+def _read_api_logs_from_redis():
+    if not redis_available:
+        return []
+    try:
+        entries = redis_client.lrange(_API_LOGS_REDIS_KEY, 0, -1)
+        logs = []
+        for raw in entries:
+            if isinstance(raw, bytes):
+                raw = raw.decode('utf-8')
+            try:
+                logs.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        return logs
+    except redis.RedisError:
+        return []
+
+def _log_api_call(model_url, model_name, status, duration_ms, response_preview=''):
+    entry = {
+        'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S'),
+        'model_url': model_url,
+        'model_name': model_name,
+        'status': status,
+        'duration_ms': duration_ms,
+        'response_preview': (response_preview or '')[:200],
+    }
+    _api_call_log.append(entry)
+    while len(_api_call_log) > _MAX_API_LOG_ENTRIES:
+        _api_call_log.pop(0)
+    if redis_available:
+        try:
+            pipe = redis_client.pipeline()
+            pipe.rpush(_API_LOGS_REDIS_KEY, json.dumps(entry, ensure_ascii=False))
+            pipe.ltrim(_API_LOGS_REDIS_KEY, -_MAX_API_LOG_ENTRIES, -1)
+            pipe.execute()
+        except redis.RedisError:
+            logger.warning('No se pudo persistir el log de API en Redis')
 LOCAL_INFERENCE_MAX = int(os.environ.get('LOCAL_INFERENCE_MAX', '3'))
 LOCAL_INFERENCE_WAIT_SECONDS = int(os.environ.get('LOCAL_INFERENCE_WAIT_SECONDS', '90'))
 LOCAL_INFERENCE_POLL_SECONDS = float(os.environ.get('LOCAL_INFERENCE_POLL_SECONDS', '1.5'))
@@ -360,6 +403,7 @@ def save_regex_config(
     model_name=None,
     opencode_command=None,
     api_key=None,
+    use_direct_api=None,
 ):
     data = {"patterns": patterns, "prompt": prompt}
     if model_url is not None:
@@ -374,6 +418,10 @@ def save_regex_config(
         data["api_key"] = api_key
     elif "api_key" in load_regex_config():
         data["api_key"] = load_regex_config().get("api_key")
+    if use_direct_api is not None:
+        data["use_direct_api"] = bool(use_direct_api)
+    elif "use_direct_api" in load_regex_config():
+        data["use_direct_api"] = load_regex_config().get("use_direct_api")
     if redis_available:
         try:
             redis_client.set(REDIS_CONFIG_KEY, json.dumps(data, ensure_ascii=False))
@@ -395,6 +443,7 @@ def get_model_config():
             'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'
         ),
         'api_key': config.get('api_key', os.environ.get('OPENAI_API_KEY', '')),
+        'use_direct_api': config.get('use_direct_api', False),
     }
 
 
@@ -668,6 +717,39 @@ def parse_pii_from_output(raw_output):
     return []
 
 
+def clean_opencode_inference_output(raw_output):
+    text = re.sub(r'\x1b\[[0-9;]*m', '', raw_output or '').strip()
+    if not text:
+        return ''
+
+    noise_markers = (
+        'Performing one time database migration',
+        'sqlite-migration:done',
+        'Database migration complete.',
+    )
+    noise_line_prefixes = (
+        '> build ',
+        '> build·',
+        '> build',
+    )
+
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if lines and lines[-1] != '':
+                lines.append('')
+            continue
+        if any(marker in stripped for marker in noise_markers):
+            break
+        if stripped.startswith(noise_line_prefixes):
+            break
+        lines.append(stripped)
+
+    cleaned = '\n'.join(lines).strip()
+    return cleaned or text
+
+
 def call_opencode_for_pii(text, wait_seconds=None):
     model_id = get_model_id()
     prompt_template = get_opencode_prompt()
@@ -764,14 +846,272 @@ def call_opencode_for_pii(text, wait_seconds=None):
             pass
 
 
+def call_direct_api_for_pii(text, wait_seconds=None):
+    prompt_template = get_opencode_prompt()
+    prompt = prompt_template.replace('{text}', text)
+
+    combined_input = (
+        "INSTRUCCIONES:\n" + prompt + "\n\n"
+        "NO HAGAS PREGUNTAS. NO SUGIERAS ACCIONES. Solo devolvé el JSON con "
+        "los datos detectados. No escribas nada más que el JSON."
+    )
+
+    cfg = get_model_config()
+    base_url = (cfg['model_url'] or '').strip().rstrip('/')
+    model_name = cfg.get('model_name', get_current_model())
+    api_key = (cfg.get('api_key') or '').strip()
+
+    if not base_url:
+        logger.warning('Direct API: sin model_url configurado')
+        return [], 'Error: no model_url configured', None, 'error'
+
+    queue_notice = None
+    slot_key = None
+    slot_token = None
+
+    if is_local_model_provider() and not is_local_provider_available():
+        queue_notice = 'Proveedor local no disponible en este momento.'
+        logger.warning(queue_notice)
+        return [], queue_notice, queue_notice, 'unavailable'
+
+    if is_local_model_provider() and redis_available and LOCAL_INFERENCE_MAX > 0:
+        logger.info(
+            'Direct API local. Intentando tomar slot de inferencia (max=%d)',
+            LOCAL_INFERENCE_MAX,
+        )
+        started_wait = time.time()
+        slot_key, slot_token = acquire_local_inference_slot(wait_seconds=wait_seconds)
+        waited = int(time.time() - started_wait)
+        if not slot_key:
+            queue_notice = (
+                'Proveedor local ocupado. No se obtuvo slot dentro del tiempo de espera.'
+            )
+            logger.warning(queue_notice)
+            return [], queue_notice, queue_notice, 'busy'
+        if waited > 0:
+            queue_notice = f'Inferencia local en cola: espera aproximada {waited}s.'
+            logger.info(queue_notice)
+
+    api_url = f"{base_url}/chat/completions"
+    payload = json.dumps({
+        "model": model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Sos un asistente que detecta datos personales en documentos. "
+                    "Respondé ÚNICAMENTE con el JSON solicitado."
+                ),
+            },
+            {"role": "user", "content": combined_input},
+        ],
+        "temperature": 0,
+        "max_tokens": 4096,
+    }).encode('utf-8')
+
+    headers = {'Content-Type': 'application/json'}
+    if api_key:
+        headers['Authorization'] = f'Bearer {api_key}'
+
+    logger.info('Direct API: llamada a %s con modelo %s', api_url, model_name)
+    started = time.time()
+    try:
+        req = Request(api_url, data=payload, headers=headers, method='POST')
+        with urlopen(req, timeout=120) as resp:
+            duration_ms = int((time.time() - started) * 1000)
+            raw = resp.read()
+            body = raw.decode('utf-8', errors='replace')
+            data = json.loads(body)
+            content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            logger.info('Direct API: respuesta en %dms, %d chars', duration_ms, len(content))
+
+            _log_api_call(base_url, model_name, 'ok', duration_ms, content[:200])
+
+            parsed = parse_pii_from_output(content)
+            if parsed:
+                logger.info('Direct API detectó %d keywords', len(parsed))
+                return parsed, content, queue_notice, 'ok'
+
+            logger.warning('Direct API no pudo parsear JSON. Preview: %s', content[:220])
+            return [], content, queue_notice, 'ok'
+    except URLError as e:
+        duration_ms = int((time.time() - started) * 1000)
+        _log_api_call(base_url, model_name, f'error: {e}', duration_ms)
+        logger.error('Direct API URLError: %s', e)
+        return [], f'Error de conexion: {e}', queue_notice, 'error'
+    except subprocess.TimeoutExpired:
+        duration_ms = int((time.time() - started) * 1000)
+        _log_api_call(base_url, model_name, 'timeout', duration_ms)
+        logger.error('Direct API timeout (120s)')
+        return [], 'Error: Timeout al llamar API', queue_notice, 'timeout'
+    except Exception as e:
+        duration_ms = int((time.time() - started) * 1000)
+        _log_api_call(base_url, model_name, f'error: {e}', duration_ms)
+        logger.error('Direct API error: %s', e)
+        return [], f'Error: {e}', queue_notice, 'error'
+    finally:
+        release_local_inference_slot(slot_key, slot_token)
+
+
+def call_opencode_for_inference(prompt_text, wait_seconds=None):
+    model_id = get_model_id()
+    logger.info('Enviando prompt de inferencia a opencode (%d chars)', len(prompt_text))
+
+    with tempfile.NamedTemporaryFile(
+        mode='w', suffix='.txt', delete=False, dir='/app/uploads'
+    ) as f:
+        f.write(prompt_text)
+        tmp_path = f.name
+
+    short_msg = 'Respondé la consulta del archivo adjunto de forma breve y clara'
+    command_template = (get_opencode_command_template() or '').strip()
+    if not command_template:
+        command_template = 'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'
+    command_filled = (
+        command_template
+        .replace('{message}', short_msg)
+        .replace('{model}', model_id)
+        .replace('{file}', tmp_path)
+    )
+
+    slot_key = None
+    slot_token = None
+    if is_local_model_provider() and not is_local_provider_available():
+        logger.warning('Proveedor local no disponible en este momento.')
+        return None, 'Proveedor local no disponible en este momento.', 'unavailable'
+
+    if is_local_model_provider() and redis_available and LOCAL_INFERENCE_MAX > 0:
+        logger.info(
+            'Inferencia opencode local. Intentando tomar slot (max=%d)',
+            LOCAL_INFERENCE_MAX,
+        )
+        slot_key, slot_token = acquire_local_inference_slot(wait_seconds=wait_seconds)
+        if not slot_key:
+            logger.warning('Proveedor local ocupado. No se obtuvo slot de inferencia.')
+            return None, 'Proveedor local ocupado. No se obtuvo slot de inferencia.', 'busy'
+
+    try:
+        logger.info('Ejecutando comando opencode de inferencia')
+        cmd_args = shlex.split(command_filled)
+        run_env = {**os.environ, 'HOME': os.environ.get('HOME', '/root')}
+        selected_api_key = (get_current_api_key() or '').strip()
+        if selected_api_key:
+            run_env['OPENAI_API_KEY'] = selected_api_key
+        result = subprocess.run(
+            cmd_args,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=run_env,
+        )
+        output = (result.stdout or '') + '\n' + (result.stderr or '')
+        output = output.strip()
+        output = clean_opencode_inference_output(output)
+        logger.info('Respuesta inferencia opencode: %d chars', len(output))
+        return output, None, 'ok'
+    except subprocess.TimeoutExpired:
+        logger.error('Timeout al ejecutar opencode de inferencia (120s)')
+        return None, 'Error: Timeout al ejecutar opencode', 'timeout'
+    except (json.JSONDecodeError, subprocess.CalledProcessError) as e:
+        logger.error('Error ejecutando opencode de inferencia: %s', e)
+        return None, f'Error: {str(e)}', 'error'
+    finally:
+        release_local_inference_slot(slot_key, slot_token)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def call_direct_api_for_inference(prompt_text, wait_seconds=None):
+    cfg = get_model_config()
+    base_url = (cfg['model_url'] or '').strip().rstrip('/')
+    model_name = cfg.get('model_name', get_current_model())
+    api_key = (cfg.get('api_key') or '').strip()
+
+    if not base_url:
+        return None, 'Error: no model_url configured', 'error'
+
+    if is_local_model_provider() and not is_local_provider_available():
+        return None, 'Proveedor local no disponible en este momento.', 'unavailable'
+
+    slot_key = None
+    slot_token = None
+    if is_local_model_provider() and redis_available and LOCAL_INFERENCE_MAX > 0:
+        slot_key, slot_token = acquire_local_inference_slot(wait_seconds=wait_seconds)
+        if not slot_key:
+            return None, 'Proveedor local ocupado. No se obtuvo slot de inferencia.', 'busy'
+
+    api_url = f"{base_url}/chat/completions"
+    payload = json.dumps({
+        "model": model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Sos un asistente útil. Respondé en español de forma breve y clara."
+            },
+            {"role": "user", "content": prompt_text},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 512,
+    }).encode('utf-8')
+
+    headers = {'Content-Type': 'application/json'}
+    if api_key:
+        headers['Authorization'] = f'Bearer {api_key}'
+
+    started = time.time()
+    try:
+        req = Request(api_url, data=payload, headers=headers, method='POST')
+        with urlopen(req, timeout=120) as resp:
+            duration_ms = int((time.time() - started) * 1000)
+            raw = resp.read()
+            body = raw.decode('utf-8', errors='replace')
+            data = json.loads(body)
+            content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            _log_api_call(base_url, model_name, 'inference-ok', duration_ms, content[:200])
+            return content, None, 'ok'
+    except URLError as e:
+        duration_ms = int((time.time() - started) * 1000)
+        _log_api_call(base_url, model_name, f'inference-error: {e}', duration_ms)
+        logger.error('Direct API inference URLError: %s', e)
+        return None, f'Error de conexion: {e}', 'error'
+    except subprocess.TimeoutExpired:
+        duration_ms = int((time.time() - started) * 1000)
+        _log_api_call(base_url, model_name, 'inference-timeout', duration_ms)
+        logger.error('Direct API inference timeout (120s)')
+        return None, 'Error: Timeout al llamar API', 'timeout'
+    except Exception as e:
+        duration_ms = int((time.time() - started) * 1000)
+        _log_api_call(base_url, model_name, f'inference-error: {e}', duration_ms)
+        logger.error('Direct API inference error: %s', e)
+        return None, f'Error: {e}', 'error'
+    finally:
+        release_local_inference_slot(slot_key, slot_token)
+
+
+def run_model_inference(prompt_text, wait_seconds=None):
+    cfg = get_model_config()
+    if cfg.get('use_direct_api'):
+        return call_direct_api_for_inference(prompt_text, wait_seconds=wait_seconds)
+    return call_opencode_for_inference(prompt_text, wait_seconds=wait_seconds)
+
+
 def run_detection_pipeline(segments, wait_seconds=None):
     plaintext = segments_to_plaintext(segments)
     logger.info('Texto plano: %d chars', len(plaintext))
 
-    pii_keywords, reasoning_output, queue_notice, ai_status = call_opencode_for_pii(
-        plaintext,
-        wait_seconds=wait_seconds,
-    )
+    use_direct = get_model_config().get('use_direct_api', False)
+    if use_direct:
+        pii_keywords, reasoning_output, queue_notice, ai_status = call_direct_api_for_pii(
+            plaintext,
+            wait_seconds=wait_seconds,
+        )
+    else:
+        pii_keywords, reasoning_output, queue_notice, ai_status = call_opencode_for_pii(
+            plaintext,
+            wait_seconds=wait_seconds,
+        )
     logger.info('IA devolvió %d keywords (status=%s)', len(pii_keywords), ai_status)
 
     default_keywords, default_positions = detect_default_pii(segments)
@@ -1234,6 +1574,7 @@ def admin_get_config():
             'opencode_command',
             'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'
         ),
+        'use_direct_api': config.get('use_direct_api', False),
     })
 
 
@@ -1309,6 +1650,12 @@ def validate_config_api_key(api_key):
     return None
 
 
+def validate_config_use_direct_api(use_direct_api):
+    if use_direct_api is None:
+        return None
+    return None
+
+
 @app.route('/admin/config', methods=['POST'])
 @admin_required
 def admin_save_config():
@@ -1321,6 +1668,7 @@ def admin_save_config():
     model_name = data.get('model_name')
     api_key = data.get('api_key')
     opencode_command = data.get('opencode_command')
+    use_direct_api = data.get('use_direct_api')
 
     err = validate_config_patterns(patterns)
     if err:
@@ -1337,13 +1685,111 @@ def admin_save_config():
     err = validate_config_api_key(api_key)
     if err:
         return jsonify({'error': err}), 400
+    err = validate_config_use_direct_api(use_direct_api)
+    if err:
+        return jsonify({'error': err}), 400
 
     try:
-        save_regex_config(patterns, prompt, model_url, model_name, opencode_command, api_key)
+        save_regex_config(patterns, prompt, model_url, model_name, opencode_command, api_key, use_direct_api)
         return jsonify({'ok': True})
     except Exception as e:
         logger.error('Error guardando config: %s', e)
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/test-api', methods=['POST'])
+@admin_required
+def admin_test_api():
+    payload = request.get_json(silent=True) or {}
+    cfg = get_model_config()
+    base_url = (payload.get('model_url') if 'model_url' in payload else cfg.get('model_url') or '').strip().rstrip('/')
+    if not base_url:
+        return jsonify({'ok': False, 'error': 'No hay model_url configurado'}), 400
+    use_direct_api = payload.get('use_direct_api') if 'use_direct_api' in payload else cfg.get('use_direct_api')
+    if not use_direct_api:
+        return jsonify({'ok': False, 'error': 'El modo API directa no esta habilitado'}), 400
+
+    model_name = payload.get('model_name') if 'model_name' in payload else cfg.get('model_name', '')
+    api_key = payload.get('api_key') if 'api_key' in payload else cfg.get('api_key', '')
+    api_key = (api_key or '').strip()
+
+    api_url = f"{base_url}/chat/completions"
+    payload = json.dumps({
+        "model": model_name,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "temperature": 0,
+        "max_tokens": 5,
+    }).encode('utf-8')
+
+    headers = {'Content-Type': 'application/json'}
+    if api_key:
+        headers['Authorization'] = f'Bearer {api_key}'
+
+    started = time.time()
+    try:
+        req = Request(api_url, data=payload, headers=headers, method='POST')
+        with urlopen(req, timeout=15) as resp:
+            duration_ms = int((time.time() - started) * 1000)
+            body = resp.read().decode('utf-8', errors='replace')
+            data_json = json.loads(body)
+            content = data_json.get('choices', [{}])[0].get('message', {}).get('content', '')
+            _log_api_call(base_url, model_name, 'test-ok', duration_ms, content[:200])
+            return jsonify({
+                'ok': True,
+                'message': f'Conexion exitosa ({duration_ms}ms)',
+                'response': content[:200],
+            })
+    except Exception as e:
+        duration_ms = int((time.time() - started) * 1000)
+        _log_api_call(base_url, model_name, f'test-error: {e}', duration_ms)
+        return jsonify({
+            'ok': False,
+            'error': str(e),
+        }), 502
+
+
+@app.route('/admin/test-inference', methods=['POST'])
+@admin_required
+def admin_test_inference():
+    prompt_text = 'hola, explica tu capacidades'
+    content, error, status = run_model_inference(prompt_text)
+    if error:
+        return jsonify({
+            'ok': False,
+            'error': error,
+            'status': status,
+        }), 502
+    return jsonify({
+        'ok': True,
+        'message': 'Inferencia completada',
+        'response': content,
+        'status': status,
+    })
+
+
+@app.route('/admin/api-logs', methods=['GET'])
+@admin_required
+def admin_api_logs():
+    logs = _read_api_logs_from_redis() if redis_available else []
+    if not logs:
+        logs = list(_api_call_log[-50:])
+    return jsonify({'logs': logs[-50:]})
+
+
+@app.route('/admin/config/restore-defaults', methods=['POST'])
+@admin_required
+def admin_restore_defaults():
+    current = load_regex_config()
+    save_regex_config(
+        patterns=DEFAULT_PATTERNS_DATA['patterns'],
+        prompt=DEFAULT_PATTERNS_DATA['prompt'],
+        model_url=current.get('model_url'),
+        model_name=current.get('model_name'),
+        api_key=current.get('api_key'),
+        opencode_command=current.get('opencode_command'),
+        use_direct_api=current.get('use_direct_api', False),
+    )
+    return jsonify({'ok': True})
 
 
 if __name__ == '__main__':

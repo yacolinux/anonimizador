@@ -81,6 +81,20 @@ Guardar y probar subiendo un DOCX/PDF.
 docker compose logs --tail=200 web
 ```
 
+## Modo API Directa (sin opencode)
+
+Si preferis llamar a Ollama por HTTP directo (sin `opencode run`), usá el tab **API Directa** del panel admin:
+
+1. En **Elegir Modelo**, configurá `model_url`, `model_name` y `api_key` como arriba.
+2. En **API Directa**, activá el checkbox "Habilitar API directa OpenAI".
+3. Usá el botón **Probar conexión** para verificar conectividad.
+4. Subí un documento; la detección IA usará `POST {model_url}/chat/completions`.
+
+Ventajas del modo directo:
+- Menor overhead (sin subprocess).
+- Logs detallados en el tab (botón **Ver logs**).
+- Compatible con cualquier endpoint OpenAI-compatible (Ollama, vLLM, LiteLLM, etc.).
+
 ## Problemas comunes
 
 - **No conecta al endpoint**: URL inaccesible desde contenedor, DNS interno incorrecto o firewall.

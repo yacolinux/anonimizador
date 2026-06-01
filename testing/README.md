@@ -26,6 +26,7 @@ Valida:
 - levantado de stack single
 - `ready` en `http://localhost:5000/ready`
 - flujo `upload -> export`
+- usa `REDIS_CONFIG_KEY` aislada (`anonimizador:config:smoke-single:<timestamp>`) para no contaminar config compartida
 
 ## Smoke test HA
 
@@ -36,6 +37,7 @@ Que valida:
 - flujo `upload -> export`
 - pagina 503 de espera con auto-refresh cada 10s cuando no hay backends
 - recuperacion al reactivar `web1..web5`
+- usa `REDIS_CONFIG_KEY` aislada (`anonimizador:config:smoke-ha:<timestamp>`) para no contaminar config compartida
 
 Uso:
 
@@ -50,7 +52,7 @@ Logs:
 
 ## Tests formales (pytest)
 
-Suite de 215 tests unitarios, de seguridad y calidad.
+Suite de 218 tests unitarios, de seguridad y calidad.
 
 Ejecución:
 
@@ -61,5 +63,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
 ### Tests agregados recientemente
 
 - `test_export_pdf.py::test_anonymize_pdf_scanned_pdf_ocr_fallback`: valida fallback OCR con `scansmpl.pdf` y exportación correcta.
-- `test_security.py`: validación de subida, path traversal, rate limit, cookies seguras, auth admin, regex inválido.
+- `test_security.py`: validación de subida, path traversal, rate limit, cookies seguras, auth admin, regex inválido, roundtrip y validación de `api_key`, cobertura de endpoint `/admin/config/restore-defaults`.
 - `test_anonymization_quality.py`: detección regex de DNI, CUIL, nombres, domicilios, expedientes, víctimas, imputados, menores, delitos sexuales, violencia, fallecimientos, organismos judiciales.
+- `test_admin_config_validation.py`: persistencia de `api_key`, presencia en `get_model_config()`.
+- `conftest.py`: `REDIS_CONFIG_KEY` única por corrida (`anonimizador:config:test:<uuid>`) para evitar contaminación de Redis compartido.

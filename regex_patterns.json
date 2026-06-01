@@ -31,6 +31,6 @@
     {"pattern": "\\b(?:expedient\\w*)\\b", "type": "sensible"}
   ],
   "prompt": "Analiza este documento y determina TODAS las palabras o conjuntos de palabras\nque son datos personales o información judicial/jurídica importante.\n\nBusca ESPECÍFICAMENTE:\n- Nombres y apellidos completos de personas\n- DNI, CUIT, CUIL, pasaporte, cualquier número de identificación\n- Domicilios o direcciones postales completas\n- Edades (números seguidos de 'años')\n- Sexo o género de la persona\n- Teléfonos, celulares, emails\n- Cuentas bancarias, CBUs, números de tarjeta\n- Montos de dinero: cifras en números Y TAMBIÉN cifras escritas en palabras\n  (ej: 'cuarenta y cuatro millones de pesos', 'dos mil quinientos dólares')\n- Cualquier cifra o valor descrito en palabras o números que sea relevante\n- Fechas de nacimiento, fechas importantes\n- Nombres de empresas, juzgados, organismos\n- Números de expediente, causas judiciales\n\nIMPORTANTE: al final de tu respuesta, incluí un bloque JSON con el\nsiguiente formato, y SOLO ese bloque JSON al final:\n\n```json\n[{\"word\": \"el texto exacto como aparece\", \"type\": \"categoria\"}, ...]\n```\n\nTEXT:\n\"\"\"\n{text}\n\"\"\"",
-  "model_url": "https://api.openrouter.ai/v1",
+  "model_url": "https://openrouter.ai/api/v1",
   "model_name": "opencode/deepseek-v4-flash-free"
 }

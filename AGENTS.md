@@ -22,7 +22,7 @@ cp .env.example .env
 | Variable | Descripción | Ejemplo |
 |---|---|---|
 | `OPENAI_API_KEY` | API key del proveedor LLM | `sk-or-v1-...` |
-| `OPENAI_BASE_URL` | URL base del proveedor | `https://api.openrouter.ai/v1` |
+| `OPENAI_BASE_URL` | URL base del proveedor | `https://openrouter.ai/api/v1` |
 | `MODEL_NAME` | Modelo a usar (formato provider/modelo) | `opencode/deepseek-v4-flash-free` |
 | `FLASK_PORT` | Puerto del servidor | `5000` |
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
@@ -64,8 +64,12 @@ cp .env.example .env
 | `/admin/login` | POST | Login admin. Body: `{user, password}` |
 | `/admin/logout` | POST | Cerrar sesión admin |
 | `/admin/status` | GET | Estado de sesión. Retorna `{logged_in: bool}` |
-| `/admin/config` | GET | Obtener configuración actual. Retorna `{patterns, prompt, model_url, model_name, api_key, opencode_command}` |
-| `/admin/config` | POST | Guardar configuración. Body: `{patterns[], prompt, model_url, model_name, api_key, opencode_command}` |
+| `/admin/config` | GET | Obtener configuración actual. Retorna `{patterns, prompt, model_url, model_name, api_key, opencode_command, use_direct_api}` |
+| `/admin/config` | POST | Guardar configuración. Body: `{patterns[], prompt, model_url, model_name, api_key, opencode_command, use_direct_api}` |
+| `/admin/test-api` | POST | Prueba de conectividad endpoint API |
+| `/admin/test-inference` | POST | Prueba de inferencia con prompt de ejemplo |
+| `/admin/api-logs` | GET | Registro de llamadas API directas |
+| `/admin/config/restore-defaults` | POST | Restaurar Prompt y Patrones Regex a defaults (preserva modelo, API key y API Directa) |
 
 ## Arquitectura
 
@@ -97,7 +101,7 @@ anonimizador/
 │   ├── test_admin_config_validation.py# Unit: config del panel admin (14 tests)
 │   ├── test_export_docx.py            # Unit: export/anonimización DOCX (8 tests)
 │   ├── test_export_pdf.py             # Unit: export/anonimización PDF (11 tests)
-│   ├── test_security.py               # Seguridad: upload, export, admin, rate limit (34 tests)
+│   ├── test_security.py               # Seguridad: upload, export, admin, rate limit (41 tests)
 │   ├── test_anonymization_quality.py  # Calidad con documentos sintéticos (46 tests)
 │   ├── smoke_single.sh                # Smoke: stack single
 │   ├── smoke_ha.sh                    # Smoke: stack HA
@@ -135,7 +139,7 @@ anonimizador/
 - **Botón "Copiar Texto Anonimizado"**: copia el texto con reemplazos al portapapeles
 - **Botón "Ver Razonamiento"**: modal con output completo de la IA
 - **Flujo IA local ocupada**: popup "Proveedor ocupado", reintento cada 5s, botón "Continuar sin IA" y botón "Reintentar con IA"
-- **Panel admin**: botón discreto ⚙ en esquina inferior izquierda, login → tabs (Prompt, Patrones Regex, Elegir Modelo con `model_url`, `model_name`, `api_key`, `opencode_command` y botón restaurar default)
+- **Panel admin**: botón discreto ⚙ en esquina inferior izquierda, login → tabs (Prompt, Patrones Regex, Elegir Modelo con `model_url`, `model_name`, `api_key`, `opencode_command`, botón guardar y botón probar inferencia; API Directa con `model_url`, `model_name`, `api_key`, toggle, guardar y test/logs) + botón global restaurar config por defecto
 
 ## Detección de PII
 
@@ -219,15 +223,16 @@ curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json
 ### Ejecución
 
 ```bash
-# Todos los tests (215 tests, ~2s)
+# Todos los tests (218 tests, ~2s)
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
 
-# Solo unitarios (130 tests)
+# Solo unitarios (132 tests)
+
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v \
   --ignore=testing/test_security.py \
   --ignore=testing/test_anonymization_quality.py
 
-# Solo seguridad (34 tests)
+# Solo seguridad (41 tests)
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_security.py -v
 
 # Solo calidad (46 tests)
@@ -237,7 +242,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 ./testing/run_all.sh
 ```
 
-### Tests unitarios (130 tests)
+### Tests unitarios (132 tests)
 
 Funciones internas de `app.py` testeadas en aislamiento:
 
@@ -252,7 +257,7 @@ Funciones internas de `app.py` testeadas en aislamiento:
 | `test_export_docx.py` (8) | `anonymize_docx` | Reemplazo de keywords, preservación de non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO |
 | `test_export_pdf.py` (11) | `anonymize_pdf`, `extract_text_pdf` | Reemplazo de keywords, preservación de non-PII, empty keywords, segmentos title/list, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO, fallback OCR con PDF escaneado |
 
-### Tests de seguridad (34 tests)
+### Tests de seguridad (41 tests)
 
 Validan que la app resista ataques comunes:
 

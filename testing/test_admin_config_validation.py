@@ -113,7 +113,7 @@ def test_get_current_model():
     assert len(model) > 0
 
 def test_is_local_model_provider_remote():
-    os.environ['OPENAI_BASE_URL'] = 'https://api.openrouter.ai/v1'
+    os.environ['OPENAI_BASE_URL'] = 'https://openrouter.ai/api/v1'
     from conftest import anon_app as app2
     result = app2.is_local_model_provider()
     assert result is False

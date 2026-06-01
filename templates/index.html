@@ -128,6 +128,7 @@
         <button class="admin-tab active" data-tab="prompt">Prompt</button>
         <button class="admin-tab" data-tab="patterns">Patrones Regex</button>
         <button class="admin-tab" data-tab="model">Elegir Modelo</button>
+        <button class="admin-tab" data-tab="api-mode">API Directa</button>
       </div>
       <div class="admin-tab-content" id="admin-tab-prompt">
         <textarea id="admin-prompt" rows="15"></textarea>
@@ -139,7 +140,7 @@
       </div>
       <div class="admin-tab-content" id="admin-tab-model" hidden>
         <label for="admin-model-url">API Endpoint URL:</label>
-        <input type="text" id="admin-model-url" placeholder="https://api.openrouter.ai/v1">
+        <input type="text" id="admin-model-url" placeholder="https://openrouter.ai/api/v1">
         <label for="admin-model-name">Nombre del modelo:</label>
         <input type="text" id="admin-model-name" placeholder="opencode/deepseek-v4-flash-free">
         <label for="admin-api-key">API Key del proveedor:</label>
@@ -148,10 +149,44 @@
         <textarea id="admin-opencode-command" rows="4" placeholder='opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'></textarea>
         <p class="admin-help-text">Placeholders disponibles: <code>{message}</code>, <code>{model}</code>, <code>{file}</code>. Ejemplo: <code>opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}</code></p>
         <button class="admin-secondary-btn" id="admin-reset-opencode-command" type="button">Restaurar comando por defecto</button>
-        <button class="btn-primary" id="admin-save-model">Guardar Modelo</button>
+        <button class="btn-primary" id="admin-save-model">Guardar configuración</button>
+        <button class="admin-secondary-btn" id="admin-test-inference-btn" type="button">Probar inferencia</button>
       </div>
+      <div class="admin-tab-content" id="admin-tab-api-mode" hidden>
+        <label for="admin-api-model-url">API Endpoint URL:</label>
+        <input type="text" id="admin-api-model-url" placeholder="https://openrouter.ai/api/v1">
+        <label for="admin-api-model-name">Nombre del modelo:</label>
+        <input type="text" id="admin-api-model-name" placeholder="opencode/deepseek-v4-flash-free">
+        <label for="admin-api-key-direct">API Key del proveedor:</label>
+        <input type="text" id="admin-api-key-direct" placeholder="sk-or-v1-..." autocomplete="off">
+        <div class="admin-checkbox-row">
+          <input type="checkbox" id="admin-use-direct-api">
+          <label for="admin-use-direct-api">Habilitar API directa OpenAI (sin opencode)</label>
+        </div>
+        <p class="admin-help-text">Cuando esta habilitado, la deteccion IA usa una llamada HTTP directa al endpoint configurado en "Elegir Modelo" en lugar de ejecutar opencode por linea de comandos.</p>
+        <div class="admin-api-actions">
+          <button class="btn-primary" id="admin-save-api-mode">Guardar configuración</button>
+          <button class="admin-secondary-btn" id="admin-test-api-btn">Probar conexion</button>
+          <button class="admin-secondary-btn" id="admin-api-logs-btn">Ver logs</button>
+        </div>
+        <p class="admin-api-status" id="admin-api-status"></p>
+        <pre class="admin-api-logs" id="admin-api-logs" hidden></pre>
+    </div>
+    <div class="admin-footer">
+      <button class="admin-restore-btn" id="admin-restore-defaults-btn">Restaurar config por defecto (solo Prompt y Regex)</button>
       <button class="admin-logout" id="admin-logout-btn">Cerrar sesión</button>
     </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="admin-inference-modal" hidden>
+  <div class="modal-content admin-inference-modal">
+    <div class="modal-header">
+      <h3>Resultado de inferencia</h3>
+      <button class="modal-close" id="admin-inference-close">&times;</button>
+    </div>
+    <pre class="modal-body" id="admin-inference-content"></pre>
   </div>
 </div>
 

@@ -3,6 +3,7 @@
 ## 2026-05-31
 
 ### Added
+- **Nuevo modo "API Directa"**: llamada HTTP directa a endpoints OpenAI-compatibles como alternativa a opencode (opcional, toggle en panel admin).
 - **Soporte OCR para PDFs escaneados**: fallback automático si `pdfplumber` extrae <100 chars. Usa `pdf2image` + `pytesseract` (Tesseract 5 + modelo `spa`).
 - **Nuevas variables de entorno**: `MAX_UPLOAD_MB=100`, `OCR_MAX_PAGES=50`, `OCR_DPI=200`, `OCR_LANG=spa`.
 - **Campo `used_ocr` en respuesta `/upload` y `/reanalyze-ai`**: permite al frontend mostrar *"Documento escaneado detectado. Procesamiento OCR aplicado."*
@@ -14,6 +15,15 @@
 - **Panel admin (Elegir Modelo)**: nuevo campo `api_key` configurable por modelo/proveedor en `/admin/config` y `regex_patterns.json`.
 - **Tests de endpoint admin config**: cobertura de `api_key` en `testing/test_security.py` (presencia en GET, roundtrip POST/GET, validación de tipo).
 - **Guía `OLLAMA.md`**: documentación paso a paso para configurar Ollama remoto privado (endpoint, modelo, API key y comando opencode).
+- **Modo API directa OpenAI (sin opencode)**:
+  - Nuevo campo `use_direct_api` en `regex_patterns.json` y `/admin/config`.
+  - Nueva función `call_direct_api_for_pii()`: llama a `{model_url}/chat/completions` con el mismo prompt y formato de respuesta que opencode.
+  - Endpoint `POST /admin/test-api`: prueba de conectividad con el endpoint configurado.
+  - Endpoint `GET /admin/api-logs`: registros de llamadas API directas (últimos 50).
+  - Log en memoria de llamadas API con timestamp, status y duración.
+  - Solapa `API Directa` con campos propios de `Elegir Modelo` y botón `Guardar configuración`.
+  - Botón `Probar inferencia` en `Elegir Modelo` con popup de resultado.
+  - Limpieza de salida de opencode para mostrar sólo el contenido útil en el popup de inferencia.
 
 ### Fixed
 - **Bug en `/export` PDF**: `extract_text()` devuelve tupla `(segments, used_ocr)`. Se corrigió desempaquetado en `anonymize_pdf()` para evitar `TypeError`.
@@ -32,6 +42,7 @@
 - **UI API key en admin**: el campo de API key se muestra en texto plano en “Elegir Modelo” (según requerimiento operativo).
 - **Scripts smoke**: `testing/smoke_single.sh` y `testing/smoke_ha.sh` exportan `REDIS_CONFIG_KEY` aislada para no pisar config compartida.
 - **Documentación actualizada**: `README.md` (nota de soporte Ollama) y `OPERACION-HA.md` (sección Ollama remoto en HA).
+- **Panel admin**: nuevo 4to tab "API Directa" con toggle, botón de prueba de conexión y visor de logs.
 
 ### Incident
 - **Config admin “vacía” en UI**: se detectó que Redis mantenía una config de prueba (`prompt: "test"`, patrón `\\d+`) en la key `anonimizador:config`.

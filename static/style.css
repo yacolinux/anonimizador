@@ -794,6 +794,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .admin-panel[hidden] {
   display: none !important;
@@ -904,6 +907,9 @@ body {
 .admin-tab-content .btn-primary:hover {
   background: var(--accent-hover);
 }
+.admin-tab-content .admin-secondary-btn {
+  align-self: flex-start;
+}
 .admin-logout {
   padding: 8px 16px;
   background: transparent;
@@ -916,6 +922,92 @@ body {
   margin-top: 8px;
 }
 .admin-logout:hover {
-  background: var(--danger);
-  color: white;
+  background: var(--danger-hover-bg, rgba(239,68,68,0.1));
+}
+
+.admin-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.admin-checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.admin-checkbox-row label {
+  font-size: 14px;
+  color: var(--text-body);
+  cursor: pointer;
+  margin-bottom: 0;
+}
+.admin-api-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.admin-api-actions .btn-primary,
+.admin-api-actions .admin-secondary-btn {
+  margin-top: 0;
+}
+.admin-api-status {
+  font-size: 13px;
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+}
+.admin-api-status.success {
+  background: rgba(34,197,94,0.12);
+  color: #16a34a;
+}
+.admin-api-status.error {
+  background: rgba(239,68,68,0.12);
+  color: #dc2626;
+}
+.admin-api-logs {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color2);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-body);
+}
+.admin-inference-modal {
+  max-width: 760px;
+  width: 95%;
+}
+.admin-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+.admin-restore-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border-color2);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.3;
+}
+.admin-restore-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-body);
 }

@@ -1,6 +1,6 @@
 # Testing
 
-Suite de tests para el Anonimizador de Documentos. 215 tests en 3 categorías: unitarios, seguridad y calidad de anonimización.
+Suite de tests para el Anonimizador de Documentos. 218 tests en 3 categorías: unitarios, seguridad y calidad de anonimización.
 
 ## Estructura
 
@@ -75,7 +75,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 
 ## Resumen de tests
 
-### Unitarios (130 tests)
+### Unitarios (132 tests)
 
 | Archivo | Tests | Qué cubre |
 |---|---|---|
@@ -88,7 +88,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 | `test_export_docx.py` | 8 | Reemplazo keywords, preserva non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO |
 | `test_export_pdf.py` | 10 | Reemplazo keywords, preserva non-PII, empty keywords, title segment, list segment, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO |
 
-### Seguridad (34 tests)
+### Seguridad (41 tests)
 
 | Clase | Tests | Qué cubre |
 |---|---|---|
@@ -197,8 +197,8 @@ Se ejecuta en **~10 segundos** con 3 jobs paralelos:
 
 | Job | Qué corre | Tiempo |
 |---|---|---|
-| `unit-tests` | 8 archivos de tests unitarios (~130 tests) | ~5s |
-| `security-tests` | `test_security.py` (34 tests) | ~3s |
+| `unit-tests` | 8 archivos de tests unitarios (~132 tests) | ~5s |
+| `security-tests` | `test_security.py` (41 tests) | ~3s |
 | `quality-tests` | `test_anonymization_quality.py` (46 tests) | ~3s |
 
 Cada job levanta un Redis efímero y corre los tests dentro del container Docker.

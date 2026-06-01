@@ -10,8 +10,8 @@ Este repositorio tiene **2 workflows** de CI que corren en cada `push`, `pull_re
 
 | Job | Qué corre | Tests | Tiempo |
 |---|---|---|---|
-| `unit-tests` | 8 archivos de tests unitarios | ~130 tests | ~5s |
-| `security-tests` | `test_security.py` | 34 tests | ~3s |
+| `unit-tests` | 8 archivos de tests unitarios | ~132 tests | ~5s |
+| `security-tests` | `test_security.py` | 41 tests | ~3s |
 | `quality-tests` | `test_anonymization_quality.py` | 46 tests | ~3s |
 
 #### Cómo funciona
@@ -77,7 +77,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 
 | Job | Qué corre | Timeout |
 |---|---|---|
-| `unit-tests` | `pytest testing/ -v` (215 tests) | 15 min |
+| `unit-tests` | `pytest testing/ -v` (218 tests) | 15 min |
 | `smoke-single` | `testing/smoke_single.sh` (1 instancia) | 35 min |
 | `smoke-ha` | `testing/smoke_ha.sh` (HAProxy + 5 instancias) | 45 min |
 | `summary` | Resumen textual (siempre, aunque fallen) | — |
@@ -92,7 +92,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 
 #### Qué valida `unit-tests` (dentro de `smoke-tests.yml`)
 
-- 215 tests pytest (unitarios, seguridad, calidad)
+- 218 tests pytest (unitarios, seguridad, calidad)
 - Fallback OCR con `scansmpl.pdf` (`test_anonymize_pdf_scanned_pdf_ocr_fallback`)
 - Levanta solo Redis (`docker compose up -d redis`) y corre `pytest testing/ -v`
 

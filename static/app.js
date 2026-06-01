@@ -506,7 +506,21 @@ const adminModelNameInput = document.getElementById('admin-model-name');
 const adminApiKeyInput = document.getElementById('admin-api-key');
 const adminOpencodeCommandInput = document.getElementById('admin-opencode-command');
 const adminResetOpencodeCommandBtn = document.getElementById('admin-reset-opencode-command');
+const adminRestoreDefaultsBtn = document.getElementById('admin-restore-defaults-btn');
 const adminSaveModelBtn = document.getElementById('admin-save-model');
+const adminApiModelUrlInput = document.getElementById('admin-api-model-url');
+const adminApiModelNameInput = document.getElementById('admin-api-model-name');
+const adminApiKeyDirectInput = document.getElementById('admin-api-key-direct');
+const adminSaveApiModeBtn = document.getElementById('admin-save-api-mode');
+const adminTestInferenceBtn = document.getElementById('admin-test-inference-btn');
+const adminUseDirectApiCb = document.getElementById('admin-use-direct-api');
+const adminTestApiBtn = document.getElementById('admin-test-api-btn');
+const adminApiLogsBtn = document.getElementById('admin-api-logs-btn');
+const adminApiStatus = document.getElementById('admin-api-status');
+const adminApiLogs = document.getElementById('admin-api-logs');
+const adminInferenceModal = document.getElementById('admin-inference-modal');
+const adminInferenceContent = document.getElementById('admin-inference-content');
+const adminInferenceClose = document.getElementById('admin-inference-close');
 
 let adminConfig = null;
 const DEFAULT_OPENCODE_COMMAND = 'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}';
@@ -583,6 +597,10 @@ async function loadAdminConfig() {
     adminModelNameInput.value = data.model_name || '';
     adminApiKeyInput.value = data.api_key || '';
     adminOpencodeCommandInput.value = data.opencode_command || '';
+    adminUseDirectApiCb.checked = !!data.use_direct_api;
+    adminApiModelUrlInput.value = data.model_url || '';
+    adminApiModelNameInput.value = data.model_name || '';
+    adminApiKeyDirectInput.value = data.api_key || '';
   } catch (err) {
     showToast('Error cargando configuración');
   }
@@ -596,6 +614,7 @@ adminTabs.forEach(tab => {
     document.getElementById('admin-tab-prompt').hidden = target !== 'prompt';
     document.getElementById('admin-tab-patterns').hidden = target !== 'patterns';
     document.getElementById('admin-tab-model').hidden = target !== 'model';
+    document.getElementById('admin-tab-api-mode').hidden = target !== 'api-mode';
   });
 });
 
@@ -615,7 +634,8 @@ adminSavePromptBtn.addEventListener('click', async () => {
         model_url: adminConfig.model_url,
         model_name: adminConfig.model_name,
         api_key: adminConfig.api_key,
-        opencode_command: adminConfig.opencode_command
+        opencode_command: adminConfig.opencode_command,
+        use_direct_api: adminConfig.use_direct_api
       })
     });
     const data = await res.json();
@@ -652,7 +672,8 @@ adminSavePatternsBtn.addEventListener('click', async () => {
         model_url: adminConfig.model_url,
         model_name: adminConfig.model_name,
         api_key: adminConfig.api_key,
-        opencode_command: adminConfig.opencode_command
+        opencode_command: adminConfig.opencode_command,
+        use_direct_api: adminConfig.use_direct_api
       })
     });
     const data = await res.json();
@@ -686,7 +707,8 @@ adminSaveModelBtn.addEventListener('click', async () => {
         model_url: modelUrl,
         model_name: modelName,
         api_key: apiKey,
-        opencode_command: opencodeCommand
+        opencode_command: opencodeCommand,
+        use_direct_api: adminConfig.use_direct_api,
       })
     });
     const data = await res.json();
@@ -696,11 +718,184 @@ adminSaveModelBtn.addEventListener('click', async () => {
       adminConfig.model_name = modelName;
       adminConfig.api_key = apiKey;
       adminConfig.opencode_command = opencodeCommand;
+      adminApiModelUrlInput.value = modelUrl;
+      adminApiModelNameInput.value = modelName;
+      adminApiKeyDirectInput.value = apiKey;
     } else {
       showToast('Error: ' + (data.error || 'No se pudo guardar'));
     }
   } catch (err) {
     showToast('Error de conexión');
+  }
+});
+
+adminSaveApiModeBtn.addEventListener('click', async () => {
+  const modelUrl = adminApiModelUrlInput.value.trim();
+  const modelName = adminApiModelNameInput.value.trim();
+  const apiKey = adminApiKeyDirectInput.value.trim();
+  if (!modelUrl || !modelName) {
+    showToast('Completá ambos campos');
+    return;
+  }
+  try {
+    const res = await fetch('/admin/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patterns: adminConfig.patterns,
+        prompt: adminConfig.prompt,
+        model_url: modelUrl,
+        model_name: modelName,
+        api_key: apiKey,
+        opencode_command: adminConfig.opencode_command,
+        use_direct_api: adminUseDirectApiCb.checked,
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast('Configuración API Directa guardada correctamente');
+      adminConfig.model_url = modelUrl;
+      adminConfig.model_name = modelName;
+      adminConfig.api_key = apiKey;
+      adminConfig.use_direct_api = adminUseDirectApiCb.checked;
+      adminModelUrlInput.value = modelUrl;
+      adminModelNameInput.value = modelName;
+      adminApiKeyInput.value = apiKey;
+    } else {
+      showToast('Error: ' + (data.error || 'No se pudo guardar'));
+    }
+  } catch (err) {
+    showToast('Error de conexión');
+  }
+});
+
+adminTestInferenceBtn.addEventListener('click', async () => {
+  adminTestInferenceBtn.disabled = true;
+  adminTestInferenceBtn.textContent = 'Probando...';
+  adminInferenceContent.textContent = 'Ejecutando inferencia...';
+  adminInferenceModal.hidden = false;
+  try {
+    const res = await fetch('/admin/test-inference', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      adminInferenceContent.textContent = data.response || '(sin respuesta)';
+    } else {
+      adminInferenceContent.textContent = 'Error: ' + (data.error || 'No se pudo ejecutar la inferencia');
+    }
+  } catch (err) {
+    adminInferenceContent.textContent = 'Error de conexión';
+  } finally {
+    adminTestInferenceBtn.disabled = false;
+    adminTestInferenceBtn.textContent = 'Probar inferencia';
+  }
+});
+
+adminInferenceClose.addEventListener('click', () => {
+  adminInferenceModal.hidden = true;
+});
+
+adminInferenceModal.addEventListener('click', (e) => {
+  if (e.target === adminInferenceModal) adminInferenceModal.hidden = true;
+});
+
+adminUseDirectApiCb.addEventListener('change', async () => {
+  const enabled = adminUseDirectApiCb.checked;
+  try {
+    const res = await fetch('/admin/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patterns: adminConfig.patterns,
+        prompt: adminConfig.prompt,
+        model_url: adminConfig.model_url,
+        model_name: adminConfig.model_name,
+        api_key: adminConfig.api_key,
+        opencode_command: adminConfig.opencode_command,
+        use_direct_api: enabled,
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast(enabled ? 'API directa habilitada' : 'API directa deshabilitada (usando opencode)');
+      adminConfig.use_direct_api = enabled;
+    } else {
+      adminUseDirectApiCb.checked = !enabled;
+      showToast('Error: ' + (data.error || 'No se pudo guardar'));
+    }
+  } catch (err) {
+    adminUseDirectApiCb.checked = !enabled;
+    showToast('Error de conexion');
+  }
+});
+
+adminTestApiBtn.addEventListener('click', async () => {
+  adminTestApiBtn.disabled = true;
+  adminTestApiBtn.textContent = 'Probando...';
+  adminApiStatus.className = 'admin-api-status';
+  adminApiStatus.textContent = '';
+  try {
+    const res = await fetch('/admin/test-api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model_url: adminModelUrlInput.value.trim(),
+        model_name: adminModelNameInput.value.trim(),
+        api_key: adminApiKeyInput.value.trim(),
+        opencode_command: adminOpencodeCommandInput.value.trim(),
+        use_direct_api: adminUseDirectApiCb.checked,
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      adminApiStatus.className = 'admin-api-status success';
+      adminApiStatus.textContent = data.message;
+    } else {
+      adminApiStatus.className = 'admin-api-status error';
+      adminApiStatus.textContent = 'Error: ' + (data.error || 'Desconocido');
+    }
+  } catch (err) {
+    adminApiStatus.className = 'admin-api-status error';
+    adminApiStatus.textContent = 'Error: ' + err.message;
+  } finally {
+    adminTestApiBtn.disabled = false;
+    adminTestApiBtn.textContent = 'Probar conexion';
+  }
+});
+
+adminApiLogsBtn.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/admin/api-logs');
+    const data = await res.json();
+    if (data.logs && data.logs.length) {
+      adminApiLogs.hidden = false;
+      adminApiLogs.textContent = JSON.stringify(data.logs, null, 2);
+    } else {
+      adminApiLogs.hidden = false;
+      adminApiLogs.textContent = 'Sin registros de llamadas API.';
+    }
+  } catch (err) {
+    showToast('Error cargando logs');
+  }
+});
+
+adminRestoreDefaultsBtn.addEventListener('click', async () => {
+  const ok = window.confirm(
+    'Esto restaurara el Prompt y los Patrones Regex a valores por defecto.\n' +
+    'La configuracion de Elegir Modelo y API Directa NO se modificaran.\n\n' +
+    '¿Continuar?'
+  );
+  if (!ok) return;
+  try {
+    const res = await fetch('/admin/config/restore-defaults', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast('Configuracion restaurada a valores por defecto');
+      loadAdminConfig();
+    } else {
+      showToast('Error: ' + (data.error || 'No se pudo restaurar'));
+    }
+  } catch (err) {
+    showToast('Error de conexion');
   }
 });
 

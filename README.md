@@ -31,7 +31,9 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - Login con credenciales configurables en `.env`
   - **Prompt**: editar el prompt que se envía a la IA
   - **Patrones Regex**: editar los patrones de detección en formato JSON
-  - **Elegir Modelo**: configurar API endpoint URL, nombre del modelo, API key y comando completo de opencode (soporta modelos locales/remotos como Ollama y experimentación de flags), con botón para restaurar comando default
+  - **Elegir Modelo**: configurar API endpoint URL, nombre del modelo, API key y comando completo de opencode (soporta modelos locales/remotos como Ollama y experimentación de flags), con botón para guardar y botón para probar inferencia
+  - **API Directa**: habilitar detección IA vía HTTP directa al endpoint OpenAI-compatible (sin opencode), con campos propios, botón de guardar, botón de prueba de conexión y visor de logs
+  - **Restaurar config**: botón que recupera Prompt y Patrones Regex a defaults sin modificar modelo ni API Directa
 - **Normalización Unicode**: maneja acentos correctamente (Pérez ↔ Perez)
 - **Corre en Docker Compose** con un solo comando
 - **Listo para balanceo/HA**: endpoint `/ready` para que HAProxy detecte instancias ocupadas
@@ -80,7 +82,7 @@ docker compose logs --tail=200 web redis
 | Variable | Descripción | Ejemplo |
 |---|---|---|
 | `OPENAI_API_KEY` | API key del proveedor LLM | `sk-or-v1-...` |
-| `OPENAI_BASE_URL` | URL base del proveedor | `https://api.openrouter.ai/v1` |
+| `OPENAI_BASE_URL` | URL base del proveedor | `https://openrouter.ai/api/v1` |
 | `MODEL_NAME` | Modelo a usar (formato provider/modelo) | `opencode/deepseek-v4-flash-free` |
 | `FLASK_PORT` | Puerto del servidor | `5000` |
 | `ADMIN_USER` | Usuario del panel admin | `adminanon` |
@@ -134,7 +136,7 @@ anonimizador/
 ├── HAPROXY.md              # Guia de balanceo y health checks
 ├── OPERACION-HA.md         # Runbook single-instance + HA
 ├── TESTING.md              # Documentación completa de tests (qué testea y qué NO)
-├── testing/                # 215 tests: unitarios, seguridad, calidad + smoke bash
+├── testing/                # 218 tests: unitarios, seguridad, calidad + smoke bash
 ├── .github/workflows/      # CI: unit-tests.yml + smoke-tests.yml
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
@@ -163,8 +165,12 @@ anonimizador/
 | `/admin/login` | POST | Login panel admin |
 | `/admin/logout` | POST | Logout panel admin |
 | `/admin/status` | GET | Estado de sesión admin |
-| `/admin/config` | GET | Obtener config (patrones, prompt, modelo, API key, comando opencode) |
+| `/admin/config` | GET | Obtener config (patrones, prompt, modelo, API key, comando opencode, modo API directa) |
 | `/admin/config` | POST | Guardar config |
+| `/admin/test-api` | POST | Probar conectividad endpoint API directa |
+| `/admin/test-inference` | POST | Probar inferencia con prompt de ejemplo |
+| `/admin/api-logs` | GET | Ver registros de llamadas API directa |
+| `/admin/config/restore-defaults` | POST | Restaurar Prompt y Patrones Regex a defaults (sin tocar modelo) |
 
 #### `/upload` response
 
@@ -242,11 +248,21 @@ Configurables en `.env`:
 
 1. **Prompt**: Editor del prompt que se envía a la IA. Usa `{text}` como placeholder para el texto del documento.
 2. **Patrones Regex**: Editor JSON de los patrones de detección. Formato: `[{"pattern": "regex", "type": "categoria"}, ...]`
-3. **Elegir Modelo**: Configurar el modelo LLM:
-   - **API Endpoint URL**: URL base del proveedor (ej: `https://api.openrouter.ai/v1` o `http://localhost:11434/v1` para Ollama)
-   - **Nombre del modelo**: Formato `provider/modelo` (ej: `opencode/deepseek-v4-flash-free`)
-   - **API Key**: clave del proveedor para ese endpoint/modelo (si se deja vacía, usa `OPENAI_API_KEY` del entorno)
-   - **Comando opencode**: línea de comando completa (usa placeholders `{message}`, `{model}`, `{file}`)
+ 3. **Elegir Modelo**: Configurar el modelo LLM:
+    - **API Endpoint URL**: URL base del proveedor (ej: `https://openrouter.ai/api/v1` o `http://localhost:11434/v1` para Ollama)
+    - **Nombre del modelo**: Formato `provider/modelo` (ej: `opencode/deepseek-v4-flash-free`)
+    - **API Key**: clave del proveedor para ese endpoint/modelo (si se deja vacía, usa `OPENAI_API_KEY` del entorno)
+    - **Comando opencode**: línea de comando completa (usa placeholders `{message}`, `{model}`, `{file}`)
+    - **Guardar configuración**: persiste los cambios del modelo/opencode
+    - **Probar inferencia**: ejecuta `hola, explica tu capacidades` y abre un popup con la respuesta
+ 4. **API Directa**: Control del modo de llamada HTTP directa:
+    - **Campos propios**: `API Endpoint URL`, `Nombre del modelo` y `API Key`
+    - **Guardar configuración**: persiste los campos del tab
+    - **Checkbox**: habilitar/deshabilitar modo API directa (por defecto usa opencode)
+    - **Probar conexión**: llama al endpoint `{model_url}/chat/completions` con un mensaje de prueba
+    - **Ver logs**: muestra las últimas llamadas API con timestamp, URL, modelo, duración y preview
+
+> Nota: el botón **Restaurar config por defecto** (al pie del panel) recupera Prompt y Patrones Regex a valores de fábrica sin modificar la configuración de Elegir Modelo ni API Directa.
 
 > Nota: para configurar **Ollama remoto privado** (servidor propio con endpoint OpenAI-compatible), ver ejemplo completo y recomendaciones en `OLLAMA.md`.
 
@@ -342,7 +358,7 @@ curl -s http://localhost:8404/stats
 
 ## 🧪 Testing
 
-El proyecto tiene **215 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
+El proyecto tiene **218 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
 
 ### Qué se testea
 
