@@ -98,7 +98,7 @@ anonimizador/
 │   ├── test_replace_normalized.py     # Unit: función de reemplazo (20 tests)
 │   ├── test_filename_validation.py    # Unit: validación de filenames (17 tests)
 │   ├── test_admin_config_validation.py# Unit: config del panel admin (14 tests)
-│   ├── test_export_docx.py            # Unit: export/anonimización DOCX (8 tests)
+│   ├── test_export_docx.py            # Unit: export/anonimización DOCX (10 tests)
 │   ├── test_export_pdf.py             # Unit: export/anonimización PDF (11 tests)
 │   ├── test_security.py               # Seguridad: upload, export, admin, rate limit (41 tests)
 │   ├── test_anonymization_quality.py  # Calidad con documentos sintéticos (46 tests)
@@ -127,6 +127,7 @@ anonimizador/
 - **Normalización Unicode**: `normalize_text()` usa NFKD + elimina combining marks
 - **Export DOCX**: reemplaza sobre el documento original preservando mejor `runs`, negritas, itálicas y estructura básica
 - **Export PDF**: usa `fpdf2` con DejaVuSans; si el origen es DOCX, renderiza directamente desde el DOCX para conservar mejor headings, listas y tablas básicas
+- **Reexport**: el archivo subido no se borra tras el primer `/export`; se mantiene hasta el TTL de cleanup para permitir exportar DOCX y PDF sobre el mismo análisis
 - **Panel admin**: sesiones Flask con `admin_required` decorator
 
 ### Frontend (`index.html` + `style.css` + `app.js`)
@@ -222,10 +223,10 @@ curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json
 ### Ejecución
 
 ```bash
-# Todos los tests (218 tests, ~2s)
+# Todos los tests (221 tests, ~2s)
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
 
-# Solo unitarios (132 tests)
+# Solo unitarios (134 tests)
 
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v \
   --ignore=testing/test_security.py \
@@ -241,7 +242,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 ./testing/run_all.sh
 ```
 
-### Tests unitarios (132 tests)
+### Tests unitarios (134 tests)
 
 Funciones internas de `app.py` testeadas en aislamiento:
 

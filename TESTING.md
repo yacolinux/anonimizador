@@ -1,6 +1,6 @@
 # Testing
 
-Suite de tests para el Anonimizador de Documentos. 218 tests en 3 categorías: unitarios, seguridad y calidad de anonimización.
+Suite de tests para el Anonimizador de Documentos. 221 tests en 3 categorías: unitarios, seguridad y calidad de anonimización.
 
 ## Estructura
 
@@ -75,7 +75,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 
 ## Resumen de tests
 
-### Unitarios (132 tests)
+### Unitarios (134 tests)
 
 | Archivo | Tests | Qué cubre |
 |---|---|---|
@@ -85,8 +85,8 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 | `test_replace_normalized.py` | 20 | Reemplazo simple, con acentos, variantes sin acento, múltiples ocurrencias, números, dirección, replacement custom, loop infinito prevention, case insensitive |
 | `test_filename_validation.py` | 17 | UUID válido (docx/pdf), extensión inválida (exe/txt/zip), path traversal, doble extensión, symlink, `is_path_inside_uploads` |
 | `test_admin_config_validation.py` | 14 | Save/load config, fallback a default cuando archivo falta, model_url/model_name, empty patterns, `is_local_model_provider` |
-| `test_export_docx.py` | 8 | Reemplazo keywords, preserva non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO |
-| `test_export_pdf.py` | 10 | Reemplazo keywords, preserva non-PII, empty keywords, title segment, list segment, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO |
+| `test_export_docx.py` | 10 | Reemplazo keywords, preserva non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO, preservación de formato en runs, match cruzando múltiples runs |
+| `test_export_pdf.py` | 11 | Reemplazo keywords, preserva non-PII, empty keywords, title segment, list segment, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO, fallback OCR, render de PDF desde DOCX con headings/tablas básicas |
 
 ### Seguridad (41 tests)
 
@@ -132,8 +132,8 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 | `test_replace_normalized.py` | Reemplazo con/sin acentos, múltiples ocurrencias, edge cases (empty keyword, empty text), case insensitive | El reemplazo dentro de DOCX/PDF reales (eso va en export tests), rendimiento con textos largos |
 | `test_filename_validation.py` | Formato UUID, extensiones válidas/inválidas, path traversal en strings, `is_path_inside_uploads` | La subida real de archivos por HTTP, validación de MIME type, tamaño máximo de archivo |
 | `test_admin_config_validation.py` | Save/load de config, fallback a default, model_url/model_name, empty patterns, `is_local_model_provider` | La persistencia real en Redis, la UI del panel admin, la aplicación inmediata de cambios |
-| `test_export_docx.py` | Reemplazo de keywords en DOCX, preservación de non-PII, tablas, celdas, acentos, custom replacement | El formato visual del DOCX resultante (colores, bold), compatibilidad con versiones de Word |
-| `test_export_pdf.py` | Reemplazo de keywords en PDF, preservación de non-PII, segmentos title/list, acentos, custom title | La calidad visual del PDF generado, compatibilidad con lectores de PDF, fonts embebidos |
+| `test_export_docx.py` | Reemplazo de keywords en DOCX, preservación de non-PII, tablas, celdas, acentos, custom replacement, preservación básica de runs/itálicas/negritas | La fidelidad visual completa del DOCX resultante, compatibilidad con todas las versiones de Word |
+| `test_export_pdf.py` | Reemplazo de keywords en PDF, preservación de non-PII, segmentos title/list, acentos, custom title, render básico desde DOCX | La fidelidad visual completa del PDF generado, compatibilidad con todos los lectores, ajuste fino tipográfico |
 
 ### Tests de seguridad
 
@@ -197,7 +197,7 @@ Se ejecuta en **~10 segundos** con 3 jobs paralelos:
 
 | Job | Qué corre | Tiempo |
 |---|---|---|
-| `unit-tests` | 8 archivos de tests unitarios (~132 tests) | ~5s |
+| `unit-tests` | 8 archivos de tests unitarios (~134 tests) | ~5s |
 | `security-tests` | `test_security.py` (41 tests) | ~3s |
 | `quality-tests` | `test_anonymization_quality.py` (46 tests) | ~3s |
 

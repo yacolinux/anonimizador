@@ -133,7 +133,7 @@ anonimizador/
 ├── HAPROXY.md              # Guia de balanceo y health checks
 ├── OPERACION-HA.md         # Runbook single-instance + HA
 ├── TESTING.md              # Documentación completa de tests (qué testea y qué NO)
-├── testing/                # 218 tests: unitarios, seguridad, calidad + smoke bash
+├── testing/                # 221 tests: unitarios, seguridad, calidad + smoke bash
 ├── .github/workflows/      # CI: unit-tests.yml + smoke-tests.yml
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── requirements.txt        # Dependencias Python
@@ -151,6 +151,7 @@ anonimizador/
 6. **Exportación** → se reemplazan las palabras seleccionadas con `[REDACTADO]` y se descarga el documento
    - DOCX: se anonimiza sobre el documento original para preservar formato
    - PDF desde DOCX: se renderiza directamente desde el DOCX para evitar pérdida innecesaria de estructura
+   - El archivo subido se conserva hasta el TTL de limpieza, por lo que se puede exportar más de una vez en formatos distintos sobre el mismo análisis
 
 ### API REST
 
@@ -354,7 +355,7 @@ curl -s http://localhost:8404/stats
 
 ## 🧪 Testing
 
-El proyecto tiene **218 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
+El proyecto tiene **221 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
 
 ### Qué se testea
 
