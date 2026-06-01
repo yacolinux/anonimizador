@@ -5,15 +5,14 @@ App web Flask para detectar y anonimizar datos personales en PDF/DOCX. Corre en 
 ## Setup
 
 ```bash
-cp .env.example .env     # editar OPENAI_API_KEY, OPENAI_BASE_URL, MODEL_NAME, ADMIN_USER, ADMIN_PASS
 docker compose up --build  # http://localhost:5000
+# Si falta .env, se crea automáticamente desde .env.example al arrancar.
 ```
 
 Sin Docker:
 ```bash
 pip install -r requirements.txt
 npm install -g opencode-ai@latest
-cp .env.example .env
 ./entrypoint.sh
 ```
 

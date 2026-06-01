@@ -24,6 +24,7 @@
   - Solapa `API Directa` con campos propios de `Elegir Modelo` y botón `Guardar configuración`.
   - Botón `Probar inferencia` en `Elegir Modelo` con popup de resultado.
   - Limpieza de salida de opencode para mostrar sólo el contenido útil en el popup de inferencia.
+  - Arranque sin `.env`: `entrypoint.sh` crea el archivo desde `.env.example` si falta y lo carga al iniciar.
 
 ### Fixed
 - **Bug en `/export` PDF**: `extract_text()` devuelve tupla `(segments, used_ocr)`. Se corrigió desempaquetado en `anonymize_pdf()` para evitar `TypeError`.

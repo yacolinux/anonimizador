@@ -36,8 +36,6 @@ services:
     build: .
     ports:
       - "5001:5000"
-    env_file:
-      - .env
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
@@ -54,8 +52,6 @@ services:
     build: .
     ports:
       - "5002:5000"
-    env_file:
-      - .env
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
@@ -72,8 +68,6 @@ services:
     build: .
     ports:
       - "5003:5000"
-    env_file:
-      - .env
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
@@ -90,8 +84,6 @@ services:
     build: .
     ports:
       - "5004:5000"
-    env_file:
-      - .env
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
@@ -108,8 +100,6 @@ services:
     build: .
     ports:
       - "5005:5000"
-    env_file:
-      - .env
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
@@ -127,8 +117,6 @@ services:
   #   build: .
   #   ports:
   #     - "5006:5000"
-  #   env_file:
-  #     - .env
   #   environment:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
@@ -145,8 +133,6 @@ services:
   #   build: .
   #   ports:
   #     - "5007:5000"
-  #   env_file:
-  #     - .env
   #   environment:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
@@ -163,8 +149,6 @@ services:
   #   build: .
   #   ports:
   #     - "5008:5000"
-  #   env_file:
-  #     - .env
   #   environment:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
@@ -181,8 +165,6 @@ services:
   #   build: .
   #   ports:
   #     - "5009:5000"
-  #   env_file:
-  #     - .env
   #   environment:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1
@@ -199,8 +181,6 @@ services:
   #   build: .
   #   ports:
   #     - "5010:5000"
-  #   env_file:
-  #     - .env
   #   environment:
   #     - FLASK_ENV=production
   #     - PYTHONUNBUFFERED=1

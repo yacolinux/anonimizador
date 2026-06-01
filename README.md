@@ -54,12 +54,10 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
 git clone https://github.com/tu-usuario/anonimizador.git
 cd anonimizador
 
-# 2. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tu API key, modelo deseado y credenciales admin
-
-# 3. Iniciar
+# 2. Iniciar
 docker compose up --build
+
+# Nota: si no existe .env, la app lo crea automáticamente desde .env.example en el arranque.
 ```
 
 La aplicación estará disponible en `http://localhost:5000`.
@@ -110,7 +108,6 @@ docker compose logs --tail=200 web redis
 ```bash
 pip install -r requirements.txt
 npm install -g opencode-ai@latest
-cp .env.example .env
 ./entrypoint.sh
 ```
 
@@ -311,13 +308,10 @@ Pasos minimos para que funcione al clonar el repo:
 git clone https://github.com/tu-usuario/anonimizador.git
 cd anonimizador
 
-# 2) Crear .env y completar variables obligatorias
-cp .env.example .env
-# editar al menos: FLASK_SECRET_KEY y ADMIN_PASS
-# recomendado: OPENAI_API_KEY, OPENAI_BASE_URL, MODEL_NAME
-
-# 3) Levantar stack HA completo (haproxy + web1..web5 + redis)
+# 2) Levantar stack HA completo (haproxy + web1..web5 + redis)
 docker compose -f docker-compose.ha.yml up --build -d
+
+# Nota: si no existe .env, la app lo crea automáticamente desde .env.example en el arranque.
 ```
 
 Prechecks recomendados (puertos libres en host):
