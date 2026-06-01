@@ -28,6 +28,8 @@
 
 ### Fixed
 - **Bug en `/export` PDF**: `extract_text()` devuelve tupla `(segments, used_ocr)`. Se corrigió desempaquetado en `anonymize_pdf()` para evitar `TypeError`.
+- **Exportación DOCX → PDF**: se corrigió un fallo real con ciertos `.docx` complejos (`FPDFException: Not enough horizontal space to render a single character`).
+- **Regresión de formato en export DOCX/PDF**: se mejoró la preservación de `runs` en DOCX y el render de headings/tablas al generar PDF desde DOCX.
 - **GitHub Actions (`unit-tests.yml` y `smoke-tests.yml`)**: creación explícita de `.env` temporal en cada job para evitar fallo `env file .../.env not found`.
 - **UX panel admin**: si `/admin/config` responde `401`, ahora la UI vuelve al login y muestra mensaje claro sobre `SESSION_COOKIE_SECURE=0` en HTTP local.
 - **Panel admin “Prompt/Patrones vacíos” tras pruebas**: se evitó contaminación de Redis productivo usando keys de config aisladas en tests/smoke (`REDIS_CONFIG_KEY` efímero).

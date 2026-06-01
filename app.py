@@ -29,7 +29,13 @@ logger = logging.getLogger('anonimizador')
 import pdfplumber
 import docx
 from docx import Document
+from docx.document import Document as DocxDocument
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from fpdf import FPDF
+from fpdf.errors import FPDFException
 from flask import (
     Flask, render_template, request, jsonify,
     send_from_directory, send_file
@@ -1210,13 +1216,155 @@ def replace_normalized(text, kw_word, replacement):
         if idx == -1:
             break
         orig_text = text[idx:idx + len(kw_word)]
-        accented = unicodedata.normalize('NFKD', orig_text)
-        has_combining = any(unicodedata.combining(c) for c in accented)
-        match_len = len(accented) if has_combining else len(kw_word)
+        match_len = len(orig_text)
         text = text[:idx] + replacement + text[idx + match_len:]
         norm_text = normalize_text(text).lower()
         start = idx + len(replacement)
     return text
+
+
+def build_normalized_index_map(text):
+    normalized_chars = []
+    index_map = []
+    for idx, char in enumerate(text):
+        normalized = normalize_text(char)
+        if not normalized:
+            continue
+        for norm_char in normalized:
+            normalized_chars.append(norm_char)
+            index_map.append(idx)
+    return ''.join(normalized_chars), index_map
+
+
+def find_normalized_ranges(text, kw_word):
+    norm_text, index_map = build_normalized_index_map(text)
+    norm_text = norm_text.lower()
+    norm_kw = normalize_text(kw_word).lower()
+    if not norm_kw:
+        return []
+
+    ranges = []
+    start = 0
+    while True:
+        idx = norm_text.find(norm_kw, start)
+        if idx == -1:
+            break
+        end_idx = idx + len(norm_kw) - 1
+        if end_idx < len(index_map):
+            orig_start = index_map[idx]
+            orig_end = index_map[end_idx] + 1
+            ranges.append((orig_start, orig_end))
+        start = idx + len(norm_kw)
+    return ranges
+
+
+def replace_keywords_in_paragraph_runs(paragraph, keywords, replacement):
+    if not paragraph.runs:
+        return False
+
+    matches = []
+    full_text = paragraph.text
+    for kw in keywords:
+        for start, end in find_normalized_ranges(full_text, kw['word']):
+            matches.append((start, end))
+    if not matches:
+        return False
+
+    deduped = []
+    seen = set()
+    for start, end in matches:
+        if (start, end) not in seen:
+            deduped.append((start, end))
+            seen.add((start, end))
+
+    for start, end in sorted(deduped, reverse=True):
+        run_positions = []
+        cursor = 0
+        for run in paragraph.runs:
+            run_len = len(run.text or '')
+            run_positions.append((run, cursor, cursor + run_len))
+            cursor += run_len
+
+        start_info = None
+        end_info = None
+        for run, run_start, run_end in run_positions:
+            if start_info is None and run_start <= start < run_end:
+                start_info = (run, run_start, run_end)
+            if run_start < end <= run_end:
+                end_info = (run, run_start, run_end)
+                break
+
+        if not start_info or not end_info:
+            continue
+
+        start_run, start_run_start, _ = start_info
+        end_run, end_run_start, _ = end_info
+        start_offset = start - start_run_start
+        end_offset = end - end_run_start
+
+        if start_run is end_run:
+            text = start_run.text or ''
+            start_run.text = text[:start_offset] + replacement + text[end_offset:]
+            continue
+
+        start_run.text = (start_run.text or '')[:start_offset] + replacement
+        end_run.text = (end_run.text or '')[end_offset:]
+
+        clearing = False
+        for run, _, _ in run_positions:
+            if run is start_run:
+                clearing = True
+                continue
+            if run is end_run:
+                break
+            if clearing:
+                run.text = ''
+
+    return True
+
+
+def iter_docx_blocks(parent):
+    if isinstance(parent, DocxDocument):
+        parent_elm = parent.element.body
+    else:
+        parent_elm = parent._tc
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, parent)
+
+
+def sanitize_pdf_text(text):
+    text = (text or '').replace('\xa0', ' ')
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    def split_long_token(match):
+        token = match.group(0)
+        return ' '.join(token[i:i + 24] for i in range(0, len(token), 24))
+
+    return re.sub(r'\S{40,}', split_long_token, text)
+
+
+def safe_pdf_multi_cell(pdf, line_height, text):
+    safe_text = sanitize_pdf_text(text)
+    if not safe_text:
+        return
+    available_width = max(pdf.w - pdf.l_margin - pdf.r_margin, 10)
+    try:
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(available_width, line_height, safe_text)
+        return
+    except FPDFException:
+        pass
+
+    # Fallback for pathological lines/tables that FPDF cannot wrap.
+    for chunk in re.split(r'\s*\|\s*', safe_text):
+        chunk = sanitize_pdf_text(chunk)
+        if not chunk:
+            continue
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(available_width, line_height, chunk)
 
 
 def anonymize_docx(filepath, keywords, replacement='[REDACTADO]'):
@@ -1260,6 +1408,10 @@ def anonymize_docx(filepath, keywords, replacement='[REDACTADO]'):
             anonymized = replace_text(original)
             if anonymized == original:
                 continue
+
+            if replace_keywords_in_paragraph_runs(para, keywords, replacement) and para.text == anonymized:
+                continue
+
             style = keep_run_style(para)
             para.text = anonymized
             if para.runs:
@@ -1308,7 +1460,7 @@ def anonymize_pdf(segments, keywords, replacement='[REDACTADO]', title='Document
         pdf.set_font('DejaVuSans', 'B', 15)
     else:
         pdf.set_font('Helvetica', 'B', 15)
-    pdf.multi_cell(0, 8, title)
+    safe_pdf_multi_cell(pdf, 8, title)
     pdf.ln(2)
 
     for seg in segments:
@@ -1336,11 +1488,85 @@ def anonymize_pdf(segments, keywords, replacement='[REDACTADO]', title='Document
             text = f'- {text}'
 
         line_h = 6.6 if seg['type'] == 'paragraph' else 7.2
-        pdf.multi_cell(0, line_h, text)
+        safe_pdf_multi_cell(pdf, line_h, text)
         if seg['type'] == 'title':
             pdf.ln(2.5)
         else:
             pdf.ln(1.4)
+
+    buf = BytesIO()
+    pdf.output(buf)
+    buf.seek(0)
+    return buf
+
+
+def anonymize_docx_to_pdf(filepath, keywords, replacement='[REDACTADO]', title='Documento Anonimizado'):
+    doc = Document(filepath)
+    pdf = FPDF(format='A4')
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.set_margins(18, 18, 18)
+    pdf.add_page()
+
+    regular_font, bold_font, _ = get_pdf_fonts()
+    has_dejavu = regular_font is not None
+
+    if has_dejavu:
+        pdf.add_font('DejaVuSans', '', regular_font, uni=True)
+        pdf.add_font('DejaVuSans', 'B', bold_font, uni=True)
+
+    def set_font(style='', size=11):
+        if has_dejavu:
+            pdf.set_font('DejaVuSans', style, size)
+        else:
+            pdf.set_font('Helvetica', style, size)
+
+    def replace_text(text):
+        out = text
+        for kw in keywords:
+            if normalize_text(kw['word']).lower() in normalize_text(out).lower():
+                out = replace_normalized(out, kw['word'], replacement)
+        return out
+
+    set_font('B', 15)
+    safe_pdf_multi_cell(pdf, 8, title)
+    pdf.ln(2)
+
+    for block in iter_docx_blocks(doc):
+        if isinstance(block, Paragraph):
+            text = replace_text(block.text.strip())
+            if not text:
+                continue
+            style_name = block.style.name.lower() if block.style else ''
+            if 'heading 1' in style_name or 'title' in style_name:
+                set_font('B', 15)
+                safe_pdf_multi_cell(pdf, 8, text)
+                pdf.ln(2)
+            elif 'heading' in style_name:
+                set_font('B', 13)
+                safe_pdf_multi_cell(pdf, 7, text)
+                pdf.ln(1.5)
+            elif 'list' in style_name:
+                set_font('', 11)
+                safe_pdf_multi_cell(pdf, 6.6, f'- {text}')
+                pdf.ln(1)
+            else:
+                is_bold = any(run.bold for run in block.runs)
+                set_font('B' if is_bold else '', 11)
+                safe_pdf_multi_cell(pdf, 6.6, text)
+                pdf.ln(1.2)
+        elif isinstance(block, Table):
+            set_font('', 10)
+            for row in block.rows:
+                row_texts = []
+                for cell in row.cells:
+                    cell_text = ' '.join(
+                        replace_text(p.text.strip()) for p in cell.paragraphs if p.text.strip()
+                    )
+                    if cell_text:
+                        row_texts.append(cell_text)
+                if row_texts:
+                    safe_pdf_multi_cell(pdf, 6.2, ' | '.join(row_texts))
+            pdf.ln(1.5)
 
     buf = BytesIO()
     pdf.output(buf)
@@ -1494,10 +1720,6 @@ def export():
     if output_format == 'docx':
         buf = anonymize_docx(filepath, kw_entries, replacement)
         logger.info('Export DOCX completado')
-        try:
-            os.unlink(filepath)
-        except OSError:
-            pass
         return send_file(
             buf,
             mimetype='application/vnd.openxmlformats-officedocument'
@@ -1506,14 +1728,18 @@ def export():
             download_name=f'anonimizado_{filename.replace(".pdf", ".docx")}'
         )
     elif output_format == 'pdf':
-        segments, _ = extract_text(filepath)
-        buf = anonymize_pdf(segments, kw_entries, replacement,
-                           f'Anonimizado - {filename}')
+        if ext == 'docx':
+            buf = anonymize_docx_to_pdf(
+                filepath,
+                kw_entries,
+                replacement,
+                f'Anonimizado - {filename}'
+            )
+        else:
+            segments, _ = extract_text(filepath)
+            buf = anonymize_pdf(segments, kw_entries, replacement,
+                               f'Anonimizado - {filename}')
         logger.info('Export PDF completado')
-        try:
-            os.unlink(filepath)
-        except OSError:
-            pass
         return send_file(
             buf,
             mimetype='application/pdf',

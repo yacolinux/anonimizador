@@ -138,3 +138,33 @@ def test_anonymize_pdf_scanned_pdf_ocr_fallback():
         assert len(buf.getvalue()) > 0
         content = _extract_pdf_text(buf)
         assert '[REDACTADO]' in content
+
+def test_anonymize_docx_to_pdf_preserves_heading_and_table_content():
+    import os
+    import tempfile
+    from docx import Document
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+    tmp.close()
+    try:
+        doc = Document()
+        doc.add_heading('Informe Clínico', level=1)
+        doc.add_paragraph('Paciente: Juan Pérez')
+        table = doc.add_table(rows=1, cols=2)
+        table.cell(0, 0).text = 'DNI'
+        table.cell(0, 1).text = '30.123.456'
+        doc.save(tmp.name)
+
+        keywords = [
+            {'word': 'Juan Pérez', 'type': 'nombre'},
+            {'word': '30.123.456', 'type': 'dni'},
+        ]
+        buf = anon_app.anonymize_docx_to_pdf(tmp.name, keywords, '[REDACTADO]', 'Anonimizado - Test')
+        content = _extract_pdf_text(buf)
+
+        assert 'Informe Clínico' in content
+        assert 'Juan Pérez' not in content
+        assert '30.123.456' not in content
+        assert '[REDACTADO]' in content
+    finally:
+        os.unlink(tmp.name)

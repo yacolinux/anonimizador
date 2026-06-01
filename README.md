@@ -24,8 +24,8 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - **Ver Razonamiento** de la IA en modal
   - Tema oscuro/claro con persistencia en localStorage
 - **Exportación** del documento anonimizado en:
-  - **DOCX** (reemplaza palabras manteniendo formato original)
-  - **PDF** (genera nuevo documento con tipografía DejaVu)
+  - **DOCX** (reemplaza palabras preservando mejor runs, negritas, itálicas y estructura básica)
+  - **PDF** (genera nuevo documento con tipografía DejaVu; si el origen es DOCX, respeta mejor headings, listas y tablas básicas)
   - *Nota*: PDFs originales solo pueden exportarse a PDF (python-docx no abre PDFs)
 - **Panel de Administración** (acceso discreto ⚙ esquina inferior izquierda):
   - Login con credenciales configurables en `.env`
@@ -149,6 +149,8 @@ anonimizador/
 4. **Combinación** → se fusionan posiciones sin duplicados y se devuelven al frontend
 5. **Interacción** → el usuario revisa, agrega o quita palabras, puede copiar el texto anonimizado
 6. **Exportación** → se reemplazan las palabras seleccionadas con `[REDACTADO]` y se descarga el documento
+   - DOCX: se anonimiza sobre el documento original para preservar formato
+   - PDF desde DOCX: se renderiza directamente desde el DOCX para evitar pérdida innecesaria de estructura
 
 ### API REST
 

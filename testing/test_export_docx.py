@@ -157,3 +157,53 @@ def test_anonymize_docx_output_is_bytesio():
         assert len(buf.getvalue()) > 0
     finally:
         os.unlink(tmp.name)
+
+def test_anonymize_docx_preserves_other_run_formatting():
+    import docx
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+    tmp.close()
+    try:
+        doc = docx.Document()
+        para = doc.add_paragraph()
+        run1 = para.add_run('Paciente: Juan Pérez')
+        run1.bold = True
+        run2 = para.add_run(' - Observación importante')
+        run2.italic = True
+        doc.save(tmp.name)
+
+        keywords = [{'word': 'Juan Pérez', 'type': 'nombre'}]
+        buf = anon_app.anonymize_docx(tmp.name, keywords, '[REDACTADO]')
+        result_doc = docx.Document(buf)
+        result_para = result_doc.paragraphs[0]
+
+        assert '[REDACTADO]' in result_para.text
+        assert result_para.runs[0].bold is True
+        assert any(run.italic for run in result_para.runs if 'Observación importante' in run.text)
+    finally:
+        os.unlink(tmp.name)
+
+def test_anonymize_docx_preserves_format_when_keyword_spans_runs():
+    import docx
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+    tmp.close()
+    try:
+        doc = docx.Document()
+        para = doc.add_paragraph()
+        run1 = para.add_run('Juan ')
+        run1.bold = True
+        run2 = para.add_run('Pérez')
+        run2.bold = True
+        run3 = para.add_run(' - Observación importante')
+        run3.italic = True
+        doc.save(tmp.name)
+
+        keywords = [{'word': 'Juan Pérez', 'type': 'nombre'}]
+        buf = anon_app.anonymize_docx(tmp.name, keywords, '[REDACTADO]')
+        result_doc = docx.Document(buf)
+        result_para = result_doc.paragraphs[0]
+
+        assert '[REDACTADO]' in result_para.text
+        assert any(run.bold for run in result_para.runs if '[REDACTADO]' in run.text)
+        assert any(run.italic for run in result_para.runs if 'Observación importante' in run.text)
+    finally:
+        os.unlink(tmp.name)

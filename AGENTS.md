@@ -125,8 +125,8 @@ anonimizador/
 - **Detección PII por IA**: `call_opencode_for_pii()` ejecuta `opencode run` como subprocess (timeout 120s)
 - **Proveedor local**: healthcheck HTTP + semáforo Redis global para concurrencia de inferencias
 - **Normalización Unicode**: `normalize_text()` usa NFKD + elimina combining marks
-- **Export DOCX**: modifica `runs` del documento original, marca en rojo bold
-- **Export PDF**: usa `fpdf2` con DejaVuSans, fallback a Helvetica
+- **Export DOCX**: reemplaza sobre el documento original preservando mejor `runs`, negritas, itálicas y estructura básica
+- **Export PDF**: usa `fpdf2` con DejaVuSans; si el origen es DOCX, renderiza directamente desde el DOCX para conservar mejor headings, listas y tablas básicas
 - **Panel admin**: sesiones Flask con `admin_required` decorator
 
 ### Frontend (`index.html` + `style.css` + `app.js`)
