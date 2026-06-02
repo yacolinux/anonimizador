@@ -136,3 +136,59 @@ def test_detect_default_pii_expediente():
     keywords, positions = anon_app.detect_default_pii(segments)
     sensible_kw = [k for k in keywords if k['type'] == 'sensible']
     assert any('expedient' in kw['word'].lower() for kw in sensible_kw)
+
+
+def test_detect_default_pii_juez_con_nombre():
+    segments = [{'type': 'paragraph', 'text': 'Juez Claudio Pérez intervino en la audiencia.'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    nombre_kw = [k for k in keywords if k['type'] == 'nombre']
+    assert any('Juez Claudio Pérez' in kw['word'] for kw in nombre_kw)
+
+
+def test_detect_default_pii_fiscalia():
+    segments = [{'type': 'paragraph', 'text': 'La Fiscalía Federal N° 3 presentó el dictamen.'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    fiscalia_kw = [k for k in keywords if k['type'] == 'fiscalia']
+    assert len(fiscalia_kw) > 0
+
+
+def test_detect_default_pii_ufi():
+    segments = [{'type': 'paragraph', 'text': 'Interviene la UFI N° 7.'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    fiscalia_kw = [k for k in keywords if k['type'] == 'fiscalia']
+    assert any('UFI' in kw['word'] for kw in fiscalia_kw)
+
+
+def test_detect_default_pii_matricula_tomo_folio():
+    segments = [{'type': 'paragraph', 'text': 'Abogada T. 54 F. 233 patrocina a la actora.'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    matricula_kw = [k for k in keywords if k['type'] == 'matricula_prof']
+    assert len(matricula_kw) > 0
+
+
+def test_detect_default_pii_generic_phone():
+    segments = [{'type': 'paragraph', 'text': 'Contacto urgente: +54 11 4567-8901'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    telefono_kw = [k for k in keywords if k['type'] == 'telefono']
+    assert len(telefono_kw) > 0
+
+
+def test_detect_default_pii_generic_date():
+    segments = [{'type': 'paragraph', 'text': 'La audiencia será el 15/03/2024.'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    fecha_kw = [k for k in keywords if k['type'] == 'fecha']
+    assert len(fecha_kw) > 0
+
+
+def test_detect_default_pii_cpacf_tomo_folio():
+    segments = [{'type': 'paragraph', 'text': 'Matrícula CPACF T. 54 F. 233 vigente.'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    matricula_kw = [k for k in keywords if k['type'] == 'matricula_prof']
+    assert len(matricula_kw) > 0
+
+
+def test_detect_default_pii_expediente_formatted():
+    segments = [{'type': 'paragraph', 'text': 'Expediente EXP-2024-55432 en trámite.'}]
+    keywords, positions = anon_app.detect_default_pii(segments)
+    expediente_kw = [k for k in keywords if k['type'] == 'expediente_judicial']
+    assert len(expediente_kw) > 0

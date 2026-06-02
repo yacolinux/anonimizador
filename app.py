@@ -85,6 +85,8 @@ SIMULATED_STREETS = [
 ]
 SIMULATED_EMAIL_DOMAINS = ['ejemplo.com', 'correo.test', 'maildemo.local']
 SIMULATED_GENDERS = ['Masculino', 'Femenino']
+SIMULATED_JUDICIAL_AREAS = ['Familia', 'Garantias', 'Civil', 'Penal', 'Laboral']
+SIMULATED_CHAMBER_AREAS = ['Civil', 'Penal', 'Laboral', 'Contencioso Administrativo']
 
 
 def _read_api_logs_from_redis():
@@ -342,7 +344,36 @@ DEFAULT_PATTERNS_DATA = {
         {"pattern": r"\d+\s*(?:años|anios|años de edad)", "type": "edad"},
         {"pattern": r"\b(?:masculino|femenino|var[oó]n|mujer|hombre|femenina|masculina)\b", "type": "sexo"},
         {"pattern": r"(?:paciente|nombre|apellido|señor|señora|sr[a]?\.?)\s*:?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+", "type": "nombre"},
+        {"pattern": r"(?:juez|jueza)\s+(?:de\s+[a-záéíóúñ]+\s+)?[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:juez|jueza)\s+(?:subrogante|interin[oa]|titular)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:fiscal|fiscala)\s+(?:general|adjunt[oa]|subrogante|titular)?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:defensor|defensora)\s+(?:oficial|p[úu]blic[oa]|general|adjunt[oa])?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:abogad[oa]|letrad[oa]|patrocinante)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:querellante|apoderad[oa]|representante\s+legal)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:secretari[oa]|prosecretari[oa]|relator[a]?)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:perito|perita|consultor\s+t[ée]cnico)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:asesor|asesora)\s+(?:de\s+menores|tutelar)?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:procurador|procuradora)\s+(?:general|adjunt[oa])?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
+        {"pattern": r"(?:Dr\.?|Dra\.?)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}", "type": "nombre"},
         {"pattern": r"\b(?:[\w.-]+@[\w.-]+\.\w{2,})\b", "type": "email"},
+        {"pattern": r"(?:tel[eé]fono|celular|m[oó]vil|fijo)\s*:?\s*(?:\+54\s*)?(?:0?\d{2,4}[-.\s]?)?\d{3,4}[-.\s]?\d{4}", "type": "telefono"},
+        {"pattern": r"\b(?:\+54\s*)?(?:9\s*)?(?:0?\d{2,4}[-.\s])?\d{3,4}[-.\s]\d{4}\b", "type": "telefono"},
+        {"pattern": r"\b\d{1,2}[-./]\d{1,2}[-./]\d{4}\b", "type": "fecha"},
+        {"pattern": r"(?:CPACF\s*)?T\.?\s*\d+\s*F\.?\s*\d+", "type": "matricula_prof"},
+        {"pattern": r"(?:T\.?\s*\d+\s*F\.?\s*\d+)", "type": "matricula_prof"},
+        {"pattern": r"(?:abogad[oa]|defensor(?:a)?|letrad[oa])\s+(?:T\.?\s*\d+\s*F\.?\s*\d+)", "type": "matricula_prof"},
+        {"pattern": r"(?:fiscal[ií]a)\s+(?:n[º°]\s*\d+|de\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ\s]+|federal\s+n[º°]\s*\d+)", "type": "fiscalia"},
+        {"pattern": r"\bUFIJ?\s*n[º°]?\s*\d+\b", "type": "fiscalia"},
+        {"pattern": r"\bUnidad\s+Fiscal\s+de\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ\s]+", "type": "fiscalia"},
+        {"pattern": r"\bMinisterio\s+P[úu]blico\s+Fiscal\b", "type": "fiscalia"},
+        {"pattern": r"(?:defensor[ií]a)\s+(?:oficial|general|p[úu]blica|n[º°]\s*\d+|de\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ\s]+)", "type": "defensoria"},
+        {"pattern": r"\bMinisterio\s+P[úu]blico\s+de\s+la\s+Defensa\b", "type": "defensoria"},
+        {"pattern": r"(?:asesor[ií]a)\s+(?:tutelar|de\s+menores|de\s+incapaces)(?:\s+n[º°]?\s*\d+)?", "type": "defensoria"},
+        {"pattern": r"(?:juzgado\s+de\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]+)*\s+N[º°]?\s*\d+)", "type": "juzgado"},
+        {"pattern": r"(?:tribunal\s+oral(?:\s+en\s+lo\s+criminal)?)(?:\s+n[º°]?\s*\d+)?", "type": "juzgado"},
+        {"pattern": r"(?:tribunal\s+de\s+impugnaci[oó]n|tribunal\s+de\s+juicio|tribunal\s+colegiado)", "type": "juzgado"},
+        {"pattern": r"(?:juzgado\s+de\s+primera\s+instancia(?:\s+en\s+lo\s+[a-záéíóúñ\s]+)?)(?:\s+n[º°]?\s*\d+)?", "type": "juzgado"},
+        {"pattern": r"(?:sala\s+[IVXLC]+\s+de\s+la\s+c[aá]mara\s+[A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)", "type": "camara"},
         {"pattern": r"\b(?:abus\w*)\b", "type": "sensible"},
         {"pattern": r"\b(?:viol\w*)\b", "type": "sensible"},
         {"pattern": r"\b(?:fallec\w*)\b", "type": "sensible"},
@@ -363,6 +394,8 @@ DEFAULT_PATTERNS_DATA = {
         {"pattern": r"\b(?:necrops\w*)\b", "type": "sensible"},
         {"pattern": r"\b(?:identif\w*)\b", "type": "sensible"},
         {"pattern": r"\b(?:document\w*)\b", "type": "sensible"},
+        {"pattern": r"\b(?:expediente|expte\.?|causa)\s*(?:n[º°]|no\.?|nro\.?)?\s*:?\s*[A-Z0-9./-]+", "type": "expediente_judicial"},
+        {"pattern": r"\bEXP-\d{4}-\d+\b", "type": "expediente_judicial"},
         {"pattern": r"\b(?:expedient\w*)\b", "type": "sensible"},
     ],
     "prompt": (
@@ -784,10 +817,21 @@ def normalize_pii_type(raw_type):
         'address': 'direccion',
         'ubicacion': 'direccion',
         'location': 'direccion',
+        'court': 'juzgado',
+        'courtroom': 'juzgado',
+        'tribunal': 'juzgado',
+        'prosecutor_office': 'fiscalia',
+        'office_of_the_prosecutor': 'fiscalia',
         'correo': 'email',
         'correo_electronico': 'email',
         'mail': 'email',
         'e_mail': 'email',
+        'bar_association_id': 'matricula_prof',
+        'license_number': 'matricula_prof',
+        'phone': 'telefono',
+        'telephone': 'telefono',
+        'case_number': 'expediente_judicial',
+        'docket_number': 'expediente_judicial',
         'genero': 'sexo',
         'gender': 'sexo',
         'sex': 'sexo',
@@ -824,9 +868,11 @@ def clean_opencode_inference_output(raw_output):
                 lines.append('')
             continue
         if any(marker in stripped for marker in noise_markers):
-            break
+            continue
         if stripped.startswith(noise_line_prefixes):
-            break
+            continue
+        if re.fullmatch(r'\[\d+m', stripped):
+            continue
         lines.append(stripped)
 
     cleaned = '\n'.join(lines).strip()
@@ -1534,6 +1580,20 @@ def build_simulated_replacement(word, kw_type, state):
         return build_simulated_gender(word, kw_type)
     if normalized_type == 'fecha':
         return build_simulated_date(word, kw_type)
+    if normalized_type == 'telefono':
+        return build_simulated_phone(word, kw_type)
+    if normalized_type == 'matricula_prof':
+        return build_simulated_professional_license(word, kw_type)
+    if normalized_type == 'juzgado':
+        return build_simulated_court(word, kw_type)
+    if normalized_type == 'fiscalia':
+        return build_simulated_prosecutor_office(word, kw_type)
+    if normalized_type == 'camara':
+        return build_simulated_chamber(word, kw_type)
+    if normalized_type == 'defensoria':
+        return build_simulated_public_defense(word, kw_type)
+    if normalized_type == 'expediente_judicial':
+        return build_simulated_case_number(word, kw_type)
     return None
 
 
@@ -1566,6 +1626,8 @@ def _match_case_style(source, replacement):
 def build_simulated_name(word, kw_type):
     prefix, source = _preserve_prefix(word, [
         r'(?:paciente|nombre|apellido|señor|señora|sr\.?|sra\.?)\s*:?\s*',
+        r'(?:juez|jueza|fiscal|fiscala|defensor|defensora|abogad[oa]|letrad[oa]|patrocinante|secretari[oa]|prosecretari[oa]|relator[a]?|perito|perita|consultor\s+t[ée]cnico|asesor|asesora|procurador|procuradora)\s+',
+        r'(?:Dr\.?|Dra\.?)\s+',
     ])
     stable = _stable_value(word, kw_type)
     first_name, last_name = SIMULATED_NAMES[stable % len(SIMULATED_NAMES)]
@@ -1642,6 +1704,120 @@ def build_simulated_date(word, kw_type):
         year = 1990 + (idx % 30)
         return f'{year}-{((idx + 4) % 12) + 1:02d}-{(idx % 27) + 1:02d}'
     return None
+
+
+def build_simulated_phone(word, kw_type):
+    prefix, source = _preserve_prefix(word, [
+        r'(?:tel[eé]fono|celular|m[oó]vil|fijo)\s*:?\s*',
+    ])
+    idx = _stable_value(word, kw_type)
+    area = 11 + (idx % 13)
+    middle = 2000 + (idx % 7000)
+    end = 1000 + ((idx // 7) % 9000)
+    if '+54' in source:
+        replacement = f'+54 {area} {middle}-{end}'
+    elif '-' in source or '.' in source or ' ' in source:
+        replacement = f'0{area}-{middle}-{end}'
+    else:
+        replacement = f'0{area}{middle}{end}'
+    return f'{prefix}{replacement}' if prefix else replacement
+
+
+def build_simulated_professional_license(word, kw_type):
+    prefix, source = _preserve_prefix(word, [
+        r'(?:abogad[oa]|defensor(?:a)?|letrad[oa])\s+',
+        r'(?:matr[ií]cula)\s*(?:n[º°]?)?\s*',
+    ])
+    idx = _stable_value(word, kw_type)
+    tomo = 40 + (idx % 120)
+    folio = 80 + ((idx // 5) % 400)
+    if re.search(r'\bT\.?\s*\d+\s*F\.?\s*\d+\b', source, re.IGNORECASE):
+        replacement = f'T. {tomo} F. {folio}'
+        return f'{prefix}{replacement}' if prefix else replacement
+    number = 10000 + (idx % 90000)
+    replacement = f'Matrícula N° {number}'
+    return f'{prefix}{replacement}' if prefix else replacement
+
+
+def build_simulated_court(word, kw_type):
+    idx = _stable_value(word, kw_type)
+    area = SIMULATED_JUDICIAL_AREAS[idx % len(SIMULATED_JUDICIAL_AREAS)]
+    number = 1 + (idx % 12)
+    lower_word = normalize_text(word).lower()
+    if 'tribunal oral' in lower_word:
+        return f'Tribunal Oral N° {number}'
+    if 'tribunal de impugnacion' in lower_word:
+        return 'Tribunal de Impugnación'
+    if 'tribunal de juicio' in lower_word:
+        return 'Tribunal de Juicio'
+    if 'tribunal colegiado' in lower_word:
+        return 'Tribunal Colegiado'
+    if 'primera instancia' in lower_word:
+        return f'Juzgado de Primera Instancia en lo {area} N° {number}'
+    if 'juzgado' in lower_word and 'de ' in lower_word:
+        return f'Juzgado de {area} N° {number}'
+    return f'Juzgado N° {number}'
+
+
+def build_simulated_prosecutor_office(word, kw_type):
+    idx = _stable_value(word, kw_type)
+    number = 1 + (idx % 12)
+    lower_word = normalize_text(word).lower()
+    if 'ufij' in lower_word:
+        return f'UFIJ N° {number}'
+    if 'ufi' in lower_word:
+        return f'UFI N° {number}'
+    if 'ministerio publico fiscal' in lower_word:
+        return 'Ministerio Público Fiscal'
+    if 'unidad fiscal' in lower_word:
+        area = SIMULATED_JUDICIAL_AREAS[idx % len(SIMULATED_JUDICIAL_AREAS)]
+        return f'Unidad Fiscal de {area}'
+    if 'federal' in lower_word:
+        return f'Fiscalía Federal N° {number}'
+    return f'Fiscalía N° {number}'
+
+
+def build_simulated_chamber(word, kw_type):
+    idx = _stable_value(word, kw_type)
+    area = SIMULATED_CHAMBER_AREAS[idx % len(SIMULATED_CHAMBER_AREAS)]
+    roman = ['I', 'II', 'III', 'IV', 'V'][idx % 5]
+    lower_word = normalize_text(word).lower()
+    if 'sala' in lower_word:
+        return f'Sala {roman} de la Cámara de Apelaciones en lo {area}'
+    if 'federal' in lower_word:
+        return f'Cámara Federal de Apelaciones en lo {area}'
+    return f'Cámara de Apelaciones en lo {area}'
+
+
+def build_simulated_public_defense(word, kw_type):
+    idx = _stable_value(word, kw_type)
+    number = 1 + (idx % 9)
+    lower_word = normalize_text(word).lower()
+    if 'ministerio publico de la defensa' in lower_word:
+        return 'Ministerio Público de la Defensa'
+    if 'asesoria' in lower_word or 'asesoría' in word.lower():
+        return f'Asesoría Tutelar N° {number}'
+    if 'defensoria del pueblo' in lower_word:
+        return 'Defensoría del Pueblo'
+    if 'general' in lower_word:
+        return 'Defensoría General'
+    return f'Defensoría Oficial N° {number}'
+
+
+def build_simulated_case_number(word, kw_type):
+    idx = _stable_value(word, kw_type)
+    year = 2020 + (idx % 7)
+    number = 10000 + (idx % 90000)
+    lower_word = normalize_text(word).lower()
+    if 'exp-' in lower_word:
+        return f'EXP-{year}-{number}'
+    if 'expte' in lower_word:
+        return f'Expte. N° {number}/{year}'
+    if 'causa' in lower_word:
+        return f'Causa N° {number}/{year}'
+    if 'expediente' in lower_word:
+        return f'Expediente N° {number}/{year}'
+    return f'EXP-{year}-{number}'
 
 
 def build_position_replacements(positions, replacement=DEFAULT_REPLACEMENT_TEXT):

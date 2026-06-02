@@ -280,3 +280,45 @@ def test_build_position_replacements_supports_alias_types():
     replacements = anon_app.build_position_replacements(positions)
     assert replacements[0]['replacement'] != '[REDACTADO]'
     assert replacements[1]['replacement'] != '[REDACTADO]'
+
+
+def test_build_position_replacements_supports_judicial_entities():
+    positions = [
+        {'segment': 0, 'start': 0, 'end': 20, 'word': 'Juzgado de Familia', 'type': 'juzgado'},
+        {'segment': 0, 'start': 21, 'end': 42, 'word': 'Fiscalía Federal N° 2', 'type': 'fiscalia'},
+        {'segment': 0, 'start': 43, 'end': 64, 'word': 'Defensoría Oficial N° 1', 'type': 'defensoria'},
+        {'segment': 0, 'start': 65, 'end': 73, 'word': 'T. 54 F. 233', 'type': 'matricula_prof'},
+        {'segment': 0, 'start': 74, 'end': 88, 'word': '011-4567-8910', 'type': 'telefono'},
+    ]
+    replacements = anon_app.build_position_replacements(positions)
+    assert all(item['replacement'] != '[REDACTADO]' for item in replacements)
+
+
+def test_build_position_replacements_supports_dates_and_case_numbers():
+    positions = [
+        {'segment': 0, 'start': 0, 'end': 10, 'word': '15/03/2024', 'type': 'fecha'},
+        {'segment': 0, 'start': 11, 'end': 25, 'word': 'EXP-2024-55432', 'type': 'expediente_judicial'},
+        {'segment': 0, 'start': 26, 'end': 44, 'word': 'CPACF T. 54 F. 233', 'type': 'matricula_prof'},
+        {'segment': 0, 'start': 45, 'end': 60, 'word': '+54 11 4567-8901', 'type': 'telefono'},
+    ]
+    replacements = anon_app.build_position_replacements(positions)
+    assert all(item['replacement'] != '[REDACTADO]' for item in replacements)
+
+
+def test_anonymize_docx_preserves_judicial_role_prefix_in_name():
+    import docx
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+    tmp.close()
+    try:
+        doc = docx.Document()
+        doc.add_paragraph('Juez Claudio Pérez intervino en la audiencia.')
+        doc.save(tmp.name)
+        keywords = [{'word': 'Juez Claudio Pérez', 'type': 'nombre'}]
+        buf = anon_app.anonymize_docx(tmp.name, keywords, '[REDACTADO]')
+        result_doc = docx.Document(buf)
+        text = ' '.join(p.text for p in result_doc.paragraphs)
+        assert 'Claudio Pérez' not in text
+        assert text.startswith('Juez ')
+        assert '[REDACTADO]' not in text
+    finally:
+        os.unlink(tmp.name)

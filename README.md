@@ -13,7 +13,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
 
 - **Carga drag & drop** de archivos PDF y DOCX (máx 50 MB)
 - **Detección en tres capas**:
-  - **Regex configurable**: 51 patrones editables desde el panel admin — DNI argentino, CUIL/CUIT, pasaporte, libreta cívica/militar, direcciones, teléfonos (formatos argentinos), edad, sexo, nombres, emails, fechas/lugar de nacimiento, CBU, tarjeta de crédito, montos, ciudades/provincias, barrios, relaciones familiares, empleador, escuela, matrícula profesional, instituciones (comisaría, penitenciaría, juzgado, Corte Suprema, Cámara, Defensoría), y palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
+  - **Regex configurable**: 76 patrones editables desde el panel admin — DNI argentino, CUIL/CUIT, pasaporte, libreta cívica/militar, direcciones, teléfonos (formatos argentinos), edad, sexo, nombres, emails, fechas/lugar de nacimiento, CBU, tarjeta de crédito, montos, ciudades/provincias, barrios, relaciones familiares, empleador, escuela, matrícula profesional, cargos judiciales con nombre (`juez`, `fiscal`, `defensor`, `abogado`, `secretario`, `perito`, `Dr./Dra.`), organismos judiciales (`juzgado`, `tribunal`, `fiscalía`, `UFI/UFIJ`, `defensoría`, `asesoría tutelar`, `cámara`, `sala`) y palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
   - **AymurAI** (opt-in desde panel admin, NER judicial): detector especializado en lenguaje judicial español. Se activa/desactiva desde admin, no depende de env var en runtime. Sidecar incluido en `docker compose up` por defecto (puerto 8899).
   - **IA**: vía **OpenCode** con prompts personalizables, usando cualquier modelo LLM compatible OpenAI
 - **Interfaz interactiva**:
@@ -29,7 +29,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - **DOCX** (reemplaza palabras preservando mejor runs, negritas, itálicas y estructura básica)
   - **PDF** (genera nuevo documento con tipografía DejaVu; si el origen es DOCX, respeta mejor headings, listas y tablas básicas)
   - *Nota*: PDFs originales solo pueden exportarse a PDF (python-docx no abre PDFs)
-  - **Modo de reemplazo inteligente**: si `replacement` es `[REDACTADO]`, el backend intenta usar datos simulados por categoría (`nombre`, `direccion`, `email`, `dni_argentino`, `edad`, `sexo`, `fecha`) y hace fallback a `[REDACTADO]` para categorías no soportadas (`sensible`, `other`, `manual`, etc.)
+  - **Modo de reemplazo inteligente**: si `replacement` es `[REDACTADO]`, el backend intenta usar datos simulados por categoría (`nombre`, `direccion`, `email`, `dni_argentino`, `edad`, `sexo`, `fecha`, `telefono`, `matricula_prof`, `juzgado`, `fiscalia`, `camara`, `defensoria`) y hace fallback a `[REDACTADO]` para categorías no soportadas (`sensible`, `other`, `manual`, etc.)
 - **Panel de Administración** (acceso discreto ⚙ esquina inferior izquierda):
   - Login con credenciales configurables en `.env`
   - **Prompt**: editar el prompt que se envía a la IA
@@ -154,7 +154,7 @@ anonimizador/
 ### Flujo de procesamiento
 
 1. **Upload** → se extrae el texto del PDF/DOCX preservando títulos, párrafos y listas
-2. **Detección regex** → patrones desde `regex_patterns.json` buscan DNI, direcciones, edad, sexo, nombres, emails, palabras sensibles
+2. **Detección regex** → patrones desde `regex_patterns.json` buscan DNI, direcciones, edad, sexo, nombres, emails, matrículas, teléfonos, cargos judiciales, organismos judiciales y palabras sensibles
 3. **Detección AymurAI** (opt-in desde panel admin) → si `use_aymurai=true` en config, cada segmento se envía al sidecar AymurAI `POST /anonymizer/predict` para NER judicial en español
 4. **Detección IA** (opcional desde panel admin) → si `use_opencode=true` en config, el texto se envía a **OpenCode** (`opencode run --model ...`) que analiza y devuelve palabras PII adicionales con categorías
 5. **Combinación** → se fusionan posiciones de regex + AymurAI + IA sin duplicados y se devuelven al frontend
@@ -166,7 +166,7 @@ anonimizador/
 8. **Exportación** → se reemplazan las palabras seleccionadas y se descarga el documento
     - DOCX: se anonimiza sobre el documento original para preservar formato
     - PDF desde DOCX: se renderiza directamente desde el DOCX para evitar pérdida innecesaria de estructura
-    - Si `replacement = [REDACTADO]`, el backend usa reemplazos simulados por categoría cuando es posible y fallback a `[REDACTADO]` cuando no
+   - Si `replacement = [REDACTADO]`, el backend usa reemplazos simulados por categoría cuando es posible, incluyendo cargos/personas judiciales y organismos judiciales detectados por regex
     - El archivo subido se conserva hasta el TTL de limpieza, por lo que se puede exportar más de una vez en formatos distintos sobre el mismo análisis
 
 ### API REST
@@ -273,10 +273,13 @@ Patrones por defecto en `regex_patterns.json` (editables desde el panel admin):
 | Matrícula profesional | `matrícula + número` | `Matrícula nº 12.345` |
 | Comisaría | `comisaría + N°/nombre` | `Comisaría Nº 5` |
 | Penitenciaría | `penitenciaría/cárcel + N°/nombre` | `Penitenciaría Nº 2` |
-| Juzgado/Tribunal | `juzgado/tribunal + N°/nombre` | `Juzgado Nº 12` |
+| Operador judicial | `juez/fiscal/defensor/abogado/secretario/perito + nombre` | `Juez Claudio Pérez` |
+| Fiscalía | `fiscalía/UFI/UFIJ/Ministerio Público Fiscal` | `Fiscalía Federal N° 2`, `UFI N° 7` |
+| Defensoría | `defensoría/asesoría tutelar/Ministerio Público de la Defensa` | `Defensoría Oficial N° 1` |
+| Juzgado/Tribunal | `juzgado/tribunal + N°/nombre` | `Juzgado de Familia N° 3`, `Tribunal Oral N° 2` |
 | Corte Suprema | `Corte Suprema de Justicia` | — |
-| Cámara | `Cámara de + nombre` | `Cámara de Apelaciones` |
-| Defensoría | `Defensoría del Pueblo` | — |
+| Cámara | `Cámara/Sala + nombre` | `Cámara de Apelaciones`, `Sala II de la Cámara...` |
+| Matrícula profesional | `matrícula`, `T. x F. y` | `Matrícula N° 12345`, `T. 54 F. 233` |
 | Sensibles | `abus\w*`, `viol\w*`, `fallec\w*`, `homicid\w*`, `femicid\w*`, `lesion\w*`, `amenaz\w*`, `agred\w*`, `imput\w*`, `conden\w*`, `deten\w*`, `testig\w*`, `denunci\w*`, `perici\w*`, `forens\w*`, `cadav\w*`, `autops\w*`, `necrops\w*`, `identif\w*`, `domicil\w*`, `document\w*`, `expedient\w*` | `abuso`, `homicidio`, `forense` |
 
 ---

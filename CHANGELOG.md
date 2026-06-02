@@ -3,26 +3,46 @@
 ## 2026-06-02
 
 ### Added
-- **Modo de reemplazo inteligente por categoría** en exportación: cuando `replacement` es `[REDACTADO]`, el backend intenta usar datos simulados plausibles por tipo (`nombre`, `direccion`, `email`, `dni_argentino`, `edad`, `sexo`, `fecha`) y mantiene `[REDACTADO]` como fallback para tipos no soportados.
+- **Modo de reemplazo inteligente por categoría** en exportación: cuando `replacement` es `[REDACTADO]`, el backend intenta usar datos simulados plausibles por tipo (`nombre`, `direccion`, `email`, `dni_argentino`, `edad`, `sexo`, `fecha`, `telefono`, `matricula_prof`, `juzgado`, `fiscalia`, `camara`, `defensoria`) y mantiene `[REDACTADO]` como fallback para tipos no soportados.
 - **Campo `position_replacements`** en respuestas de `/upload` y `/reanalyze-ai`: expone reemplazos sugeridos por posición para sincronizar preview, copiado y export.
 - **Tests de estabilidad/fallback** para reemplazos sugeridos por posición en `testing/test_export_docx.py`.
 - **Normalización de aliases de tipos PII**: tipos libres devueltos por IA como `persona`, `domicilio`, `mail`, `genero`, `documento` ahora se mapean a tipos internos canónicos antes de renderizar/exportar.
+- **Expansión judicial de regex**: nuevos patrones para cargos judiciales con nombre (`juez`, `fiscal`, `defensor`, `abogado`, `secretario`, `perito`, `Dr./Dra.`), fiscalías, UFI/UFIJ, defensorías, asesorías tutelares, tribunales orales, salas de cámara y matrículas `T. x F. y`.
+- **Cobertura adicional de formatos judiciales frecuentes**: detección/simulación para teléfonos genéricos, fechas genéricas `dd/mm/yyyy`, matrículas tipo `CPACF T. x F. y` y expedientes tipo `EXP-2024-55432`.
+- **Archivo de prueba `ejemplo2.docx`**: documento judicial sintético sin redacciones previas para validar render y fallback en un caso limpio.
 
 ### Changed
 - **Preview frontend sincronizada con export**: cuando el texto de reemplazo es `[REDACTADO]`, la UI muestra los mismos reemplazos simulados sugeridos por backend; al desmarcar una entidad, el texto vuelve al original porque la vista se reconstruye siempre desde `segments`.
 - **Regla visual de fallback**: si una entidad marcada solo puede terminar en `[REDACTADO]`, la preview deja visible el texto original pero resaltado; el copiado y la exportación siguen aplicando `[REDACTADO]` real.
 - **Reemplazos simulados determinísticos**: ahora se derivan de `word + type`, evitando diferencias entre preview y export por orden de selección.
+- **Cobertura regex**: `regex_patterns.json` pasa de 51 a 76 patrones, mejorando la detección temprana de entidades judiciales y reduciendo dependencia de la IA para esos casos.
+- **Cobertura regex en runtime**: la configuración activa pasó de 51 a 81 patrones al sincronizar Redis con `regex_patterns.json`, evitando que el backend siguiera usando una versión vieja de patrones.
 - **Documentación actualizada**: `README.md`, `TESTING.md`, `AGENTS.md`, `CHANGELOG.md`.
 
 ### Fixed
 - **Modal "Ver Razonamiento" con ruido de opencode**: `call_opencode_for_pii()` ahora limpia mensajes de migración/build antes de devolver `reasoning` al frontend.
 - **Preview/export cayendo indebidamente a `[REDACTADO]`** para entidades detectadas por IA con tipos alias: se corrigió normalizando categorías antes de construir `position_replacements` y antes de exportar.
+- **Regresión visual en preview**: entidades con fallback `[REDACTADO]` vuelven a mostrarse con el texto original resaltado en vez de verse como `[REDACTADO]` en la vista del documento.
+- **Diagnóstico falso positivo sobre preview**: se verificó que `ejemplo.docx` ya contenía múltiples `[REDACTADO]` en origen; el nuevo `ejemplo2.docx` permitió aislar los fallbacks reales del pipeline.
+- **Config stale en Redis**: el backend seguía cargando una versión vieja de `regex_patterns.json` desde `anonimizador:config`. Se sincronizó la config activa con el archivo actual para habilitar los nuevos patrones en runtime.
+- **Fallback excesivo en documentos judiciales**: se redujo la cantidad de entidades que terminaban en `[REDACTADO]` al tipar correctamente teléfonos, fechas, matrículas CPACF y números de expediente.
 
 ### Verified
 - `sudo docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_export_docx.py testing/test_export_pdf.py testing/test_security.py -q`
   - `63 passed`
 - `sudo docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_parse_llm_response.py testing/test_export_docx.py testing/test_export_pdf.py testing/test_security.py -q`
   - `92 passed`
+- `sudo docker compose build web && sudo docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_regex_detection.py testing/test_export_docx.py testing/test_anonymization_quality.py testing/test_parse_llm_response.py -q`
+  - `116 passed`
+- `sudo docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_export_pdf.py testing/test_security.py testing/test_aymurai_integration.py -q`
+  - `60 passed`
+- `curl -s -F "file=@ejemplo2.docx" http://localhost:5000/upload`
+  - `positions: 36`
+  - `fallback_count: 15` antes de sincronizar Redis
+  - `positions: 41`
+  - `fallback_count: 11` después de sincronizar Redis con `regex_patterns.json`
+- `sudo docker compose up --build -d --force-recreate web`
+  - `web` reconstruido y recreado con la config activa sincronizada
 
 ## 2026-06-01
 

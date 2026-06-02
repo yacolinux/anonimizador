@@ -131,10 +131,10 @@ anonimizador/
 - **Detección PII por regex**: `detect_default_pii()` lee patrones desde `regex_patterns.json`
 - **Detección PII por AymurAI** (opt-in desde panel admin): `call_aymurai_for_segments()` llama a sidecar NER judicial vía `POST /anonymizer/predict` (timeout y URL configurables desde admin)
 - **Detección PII por IA** (opcional desde panel admin): `call_opencode_for_pii()` ejecuta `opencode run` como subprocess (timeout 120s). Se desactiva con `use_opencode=false` en config
-- **Normalización de tipos PII**: `normalize_pii_type()` mapea aliases de IA/NER como `persona`, `domicilio`, `mail`, `genero`, `documento` a tipos internos canónicos (`nombre`, `direccion`, `email`, `sexo`, `dni_argentino`)
+- **Normalización de tipos PII**: `normalize_pii_type()` mapea aliases de IA/NER como `persona`, `domicilio`, `mail`, `genero`, `documento`, `court`, `prosecutor_office`, `phone`, `license_number` a tipos internos canónicos (`nombre`, `direccion`, `email`, `sexo`, `dni_argentino`, `juzgado`, `fiscalia`, `telefono`, `matricula_prof`)
 - **Proveedor local**: healthcheck HTTP + semáforo Redis global para concurrencia de inferencias
 - **Normalización Unicode**: `normalize_text()` usa NFKD + elimina combining marks
-- **Reemplazo inteligente**: `build_position_replacements()` genera reemplazos sugeridos por posición para sincronizar preview y export cuando `replacement == [REDACTADO]`
+- **Reemplazo inteligente**: `build_position_replacements()` genera reemplazos sugeridos por posición para sincronizar preview y export cuando `replacement == [REDACTADO]`. Soporta personas/cargos judiciales, teléfonos, matrículas y organismos judiciales (`juzgado`, `fiscalia`, `camara`, `defensoria`).
 - **Export DOCX**: reemplaza sobre el documento original preservando mejor `runs`, negritas, itálicas y estructura básica
 - **Export PDF**: usa `fpdf2` con DejaVuSans; si el origen es DOCX, renderiza directamente desde el DOCX para conservar mejor headings, listas y tablas básicas
 - **Reexport**: el archivo subido no se borra tras el primer `/export`; se mantiene hasta el TTL de cleanup para permitir exportar DOCX y PDF sobre el mismo análisis
@@ -157,7 +157,7 @@ anonimizador/
 
 Tres capas combinadas en `/upload`:
 
-1. **Regex configurable** (`detect_default_pii`): lee patrones desde `regex_patterns.json` (51 patrones). Incluye:
+1. **Regex configurable** (`detect_default_pii`): lee patrones desde `regex_patterns.json` (76 patrones). Incluye:
    - DNI argentino (`XX.XXX.XXX`, `XXXXXXXX`)
    - CUIL/CUIT (`XX-XXXXXXXX-X`)
    - Pasaporte, Libreta Cívica, Libreta Militar
@@ -172,7 +172,8 @@ Tres capas combinadas en `/upload`:
    - Ciudades/provincias, barrios/localidades
    - Relaciones familiares (padre, madre, tutor legal, cónyuge)
    - Empleador, escuela, matrícula profesional
-   - Instituciones (comisaría, penitenciaría, juzgado, Corte Suprema, Cámara, Defensoría)
+   - Operadores judiciales (`juez`, `jueza`, `fiscal`, `fiscala`, `defensor`, `abogada`, `secretario`, `perito`, `Dr./Dra.` + nombre)
+   - Instituciones judiciales (comisaría, penitenciaría, juzgado, tribunal oral, fiscalía, UFI/UFIJ, Cámara, Sala, Defensoría, Asesoría Tutelar, Ministerio Público Fiscal, Ministerio Público de la Defensa)
    - Palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
 
 2. **AymurAI (opt-in, NER judicial)**: `call_aymurai_for_segments()` envía cada segmento al sidecar AymurAI `POST /anonymizer/predict`. Retorna spans exactos mapeados a tipos internos vía `map_aymurai_label_to_type()` (28 labels, 23 mapeados, fallback `"other"`). Se activa/desactiva desde panel admin (`use_aymurai`), no depende de env var en runtime.
@@ -192,7 +193,7 @@ Flujo actual de renderizado/anonimización:
 3. Frontend guarda `positions` + `position_replacements` y reconstruye la vista desde `segments` originales en cada toggle.
 4. Si `replacement-text != [REDACTADO]`, preview, copiado y export usan el literal configurado por el usuario.
 5. Si `replacement-text == [REDACTADO]`:
-   - preview muestra simulados cuando existen
+   - preview muestra simulados cuando existen, incluyendo cargos/personas judiciales, juzgados, fiscalías, cámaras, defensorías, teléfonos y matrículas
    - preview deja visible el original cuando el backend solo pudo sugerir `[REDACTADO]`
    - copiado y export aplican el valor real final, incluyendo `[REDACTADO]` en fallbacks
 
