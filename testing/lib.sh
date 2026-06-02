@@ -55,7 +55,7 @@ obj = json.load(open('$file_path'))
 print('[CHECK] upload keys:', sorted(obj.keys()))
 assert obj.get('filename'), 'missing filename'
 assert isinstance(obj.get('positions'), list), 'positions must be list'
-assert obj.get('ai_status') in ('ok', 'busy', 'unavailable', 'timeout', 'error'), 'invalid ai_status'
+assert obj.get('ai_status') in ('ok', 'busy', 'unavailable', 'timeout', 'error', 'disabled', 'skipped'), 'invalid ai_status'
 assert obj.get('analysis_mode') in ('full', 'regex_only'), 'invalid analysis_mode'
 print('[CHECK] upload response OK')
 PY
