@@ -5,6 +5,7 @@ import json
 import uuid
 import hmac
 import time
+import hashlib
 import unicodedata
 import subprocess
 import tempfile
@@ -67,6 +68,23 @@ AYMURAI_MIN_SEGMENT_CHARS = int(os.environ.get('AYMURAI_MIN_SEGMENT_CHARS', '15'
 _api_call_log = []
 _MAX_API_LOG_ENTRIES = 100
 _API_LOGS_REDIS_KEY = 'anonimizador:api_logs'
+DEFAULT_REPLACEMENT_TEXT = '[REDACTADO]'
+SIMULATED_NAMES = [
+    ('Carlos', 'Gomez'),
+    ('Lucia', 'Fernandez'),
+    ('Martin', 'Suarez'),
+    ('Valentina', 'Navarro'),
+    ('Santiago', 'Benitez'),
+]
+SIMULATED_STREETS = [
+    'Los Aromos',
+    'Las Acacias',
+    'San Felipe',
+    'Belgrano Norte',
+    'Piedras Blancas',
+]
+SIMULATED_EMAIL_DOMAINS = ['ejemplo.com', 'correo.test', 'maildemo.local']
+SIMULATED_GENDERS = ['Masculino', 'Femenino']
 
 
 def _read_api_logs_from_redis():
@@ -714,7 +732,7 @@ def parse_pii_from_output(raw_output):
                 for item in parsed:
                     if isinstance(item, dict) and 'word' in item and 'type' in item:
                         word = str(item.get('word', '')).strip()
-                        ptype = str(item.get('type', 'other')).strip() or 'other'
+                        ptype = normalize_pii_type(item.get('type', 'other'))
                         if word:
                             cleaned.append({'word': word, 'type': ptype})
                 if cleaned:
@@ -728,7 +746,7 @@ def parse_pii_from_output(raw_output):
         re.IGNORECASE,
     )
     if pair_matches:
-        return [{'word': w.strip(), 'type': t.strip() or 'other'} for w, t in pair_matches if w.strip()]
+        return [{'word': w.strip(), 'type': normalize_pii_type(t)} for w, t in pair_matches if w.strip()]
 
     table_lines = [ln.strip() for ln in text.splitlines() if '|' in ln]
     extracted = []
@@ -737,11 +755,49 @@ def parse_pii_from_output(raw_output):
             continue
         cols = [c.strip(' `') for c in ln.split('|') if c.strip()]
         if len(cols) >= 2 and cols[0].lower() not in ('palabra', 'word'):
-            extracted.append({'word': cols[0], 'type': cols[1] or 'other'})
+            extracted.append({'word': cols[0], 'type': normalize_pii_type(cols[1])})
     if extracted:
         return extracted
 
     return []
+
+
+def normalize_pii_type(raw_type):
+    normalized = normalize_text(str(raw_type or 'other')).strip().lower()
+    normalized = re.sub(r'[^a-z0-9]+', '_', normalized).strip('_')
+    if not normalized:
+        return 'other'
+
+    aliases = {
+        'dni': 'dni_argentino',
+        'documento': 'dni_argentino',
+        'documento_identidad': 'dni_argentino',
+        'nombre_apellido': 'nombre',
+        'nombre_completo': 'nombre',
+        'apellido_y_nombre': 'nombre',
+        'persona': 'nombre',
+        'persona_fisica': 'nombre',
+        'person': 'nombre',
+        'per': 'nombre',
+        'direccion_postal': 'direccion',
+        'domicilio': 'direccion',
+        'address': 'direccion',
+        'ubicacion': 'direccion',
+        'location': 'direccion',
+        'correo': 'email',
+        'correo_electronico': 'email',
+        'mail': 'email',
+        'e_mail': 'email',
+        'genero': 'sexo',
+        'gender': 'sexo',
+        'sex': 'sexo',
+        'fecha_nacimiento': 'fecha',
+        'fecha_de_nacimiento': 'fecha',
+        'date': 'fecha',
+        'fecha_del_hecho': 'fecha',
+        'age': 'edad',
+    }
+    return aliases.get(normalized, normalized)
 
 
 def clean_opencode_inference_output(raw_output):
@@ -850,15 +906,16 @@ def call_opencode_for_pii(text, wait_seconds=None):
 
         full_output = (result.stdout or '') + '\n' + (result.stderr or '')
         full_output = full_output.strip()
-        logger.info('Respuesta opencode: %d chars', len(full_output))
+        cleaned_output = clean_opencode_inference_output(full_output)
+        logger.info('Respuesta opencode: %d chars', len(cleaned_output))
 
-        parsed = parse_pii_from_output(full_output)
+        parsed = parse_pii_from_output(cleaned_output)
         if parsed:
             logger.info('PII detectadas por IA: %d keywords', len(parsed))
-            return parsed, full_output, queue_notice, 'ok'
+            return parsed, cleaned_output, queue_notice, 'ok'
 
-        logger.warning('No se pudo parsear JSON del output de opencode. Preview: %s', full_output[:220])
-        return [], full_output, queue_notice, 'ok'
+        logger.warning('No se pudo parsear JSON del output de opencode. Preview: %s', cleaned_output[:220])
+        return [], cleaned_output, queue_notice, 'ok'
     except subprocess.TimeoutExpired:
         logger.error('Timeout al ejecutar opencode (120s)')
         return [], 'Error: Timeout al ejecutar opencode', queue_notice, 'timeout'
@@ -1419,6 +1476,201 @@ def replace_normalized(text, kw_word, replacement):
     return text
 
 
+def get_keyword_replacement_entries(keywords, replacement=DEFAULT_REPLACEMENT_TEXT):
+    normalized_entries = []
+    seen = set()
+    state = {'assigned': {}}
+
+    for kw in keywords:
+        word = str(kw.get('word', '')).strip()
+        if not word:
+            continue
+        kw_type = normalize_pii_type(kw.get('type', 'other'))
+        key = (normalize_text(word).lower(), kw_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_entries.append({
+            'word': word,
+            'type': kw_type,
+            'replacement': resolve_keyword_replacement(word, kw_type, replacement, state),
+        })
+
+    normalized_entries.sort(key=lambda item: len(normalize_text(item['word'])), reverse=True)
+    return normalized_entries
+
+
+def resolve_keyword_replacement(word, kw_type, fallback_replacement, state):
+    fallback_replacement = fallback_replacement or DEFAULT_REPLACEMENT_TEXT
+    if fallback_replacement != DEFAULT_REPLACEMENT_TEXT:
+        return fallback_replacement
+
+    normalized_key = (normalize_text(word).lower(), kw_type)
+    assigned = state['assigned']
+    if normalized_key in assigned:
+        return assigned[normalized_key]
+
+    simulated = build_simulated_replacement(word, kw_type, state)
+    if not simulated:
+        simulated = DEFAULT_REPLACEMENT_TEXT
+    assigned[normalized_key] = simulated
+    return simulated
+
+
+def build_simulated_replacement(word, kw_type, state):
+    normalized_type = normalize_pii_type(kw_type)
+
+    if normalized_type == 'nombre':
+        return build_simulated_name(word, kw_type)
+    if normalized_type == 'direccion':
+        return build_simulated_address(word, kw_type)
+    if normalized_type == 'email':
+        return build_simulated_email(word, kw_type)
+    if normalized_type == 'dni_argentino':
+        return build_simulated_dni(word, kw_type)
+    if normalized_type == 'edad':
+        return build_simulated_age(word, kw_type)
+    if normalized_type == 'sexo':
+        return build_simulated_gender(word, kw_type)
+    if normalized_type == 'fecha':
+        return build_simulated_date(word, kw_type)
+    return None
+
+
+def _stable_value(word, kw_type):
+    seed = f'{normalize_text(word).lower()}|{(kw_type or "other").strip().lower()}'
+    digest = hashlib.sha256(seed.encode('utf-8')).hexdigest()
+    return int(digest[:16], 16)
+
+
+def _preserve_prefix(word, prefixes):
+    for prefix in prefixes:
+        match = re.match(prefix, word, re.IGNORECASE)
+        if match:
+            return match.group(0), word[match.end():].strip()
+    return '', word.strip()
+
+
+def _match_case_style(source, replacement):
+    if not source:
+        return replacement
+    if source.isupper():
+        return replacement.upper()
+    if source.islower():
+        return replacement.lower()
+    if source.istitle():
+        return replacement.title()
+    return replacement
+
+
+def build_simulated_name(word, kw_type):
+    prefix, source = _preserve_prefix(word, [
+        r'(?:paciente|nombre|apellido|señor|señora|sr\.?|sra\.?)\s*:?\s*',
+    ])
+    stable = _stable_value(word, kw_type)
+    first_name, last_name = SIMULATED_NAMES[stable % len(SIMULATED_NAMES)]
+    replacement = f'{first_name} {last_name}'
+    replacement = _match_case_style(source, replacement)
+    return f'{prefix}{replacement}' if prefix else replacement
+
+
+def build_simulated_address(word, kw_type):
+    prefix, source = _preserve_prefix(word, [
+        r'(?:domicilio|direcci[oó]n)\s*:?\s*',
+    ])
+    stable = _stable_value(word, kw_type)
+    street = SIMULATED_STREETS[stable % len(SIMULATED_STREETS)]
+    number = 120 + (stable % 4200)
+    replacement = f'Calle {street} {number}'
+    lower_source = normalize_text(source).lower()
+    if lower_source.startswith('av.') or lower_source.startswith('avenida'):
+        replacement = replacement.replace('Calle', 'Av.', 1)
+    elif lower_source.startswith('pasaje'):
+        replacement = replacement.replace('Calle', 'Pasaje', 1)
+    elif lower_source.startswith('ruta'):
+        replacement = f'Ruta Provincial {10 + (stable % 90)}'
+    elif lower_source.startswith('camino'):
+        replacement = replacement.replace('Calle', 'Camino', 1)
+    replacement = _match_case_style(source, replacement)
+    return f'{prefix}{replacement}' if prefix else replacement
+
+
+def build_simulated_email(word, kw_type):
+    local_parts = [
+        'carlos.gomez',
+        'lucia.fernandez',
+        'martin.suarez',
+        'valentina.navarro',
+        'santiago.benitez',
+    ]
+    idx = _stable_value(word, kw_type)
+    local_part = local_parts[idx % len(local_parts)]
+    domain = SIMULATED_EMAIL_DOMAINS[idx % len(SIMULATED_EMAIL_DOMAINS)]
+    return f'{local_part}{100 + idx % 9000}@{domain}'
+
+
+def build_simulated_dni(word, kw_type):
+    number = 32000000 + (_stable_value(word, kw_type) % 8000000)
+    digits = str(number).zfill(8)[-8:]
+    if '.' in word:
+        return f'{digits[:2]}.{digits[2:5]}.{digits[5:]}'
+    return digits
+
+
+def build_simulated_age(word, kw_type):
+    match = re.search(r'(años|anios|años de edad)', word, re.IGNORECASE)
+    suffix = match.group(0) if match else 'años'
+    age = 21 + (_stable_value(word, kw_type) % 55)
+    return f'{age} {suffix}'
+
+
+def build_simulated_gender(word, kw_type):
+    idx = _stable_value(word, kw_type)
+    replacement = SIMULATED_GENDERS[idx % len(SIMULATED_GENDERS)]
+    return _match_case_style(word, replacement)
+
+
+def build_simulated_date(word, kw_type):
+    idx = _stable_value(word, kw_type)
+    if re.fullmatch(r'\d{1,2}/\d{1,2}/\d{2,4}', word):
+        year = 1990 + (idx % 30)
+        return f'{(idx % 27) + 1:02d}/{((idx + 4) % 12) + 1:02d}/{year}'
+    if re.fullmatch(r'\d{1,2}-\d{1,2}-\d{2,4}', word):
+        year = 1990 + (idx % 30)
+        return f'{(idx % 27) + 1:02d}-{((idx + 4) % 12) + 1:02d}-{year}'
+    if re.fullmatch(r'\d{4}-\d{1,2}-\d{1,2}', word):
+        year = 1990 + (idx % 30)
+        return f'{year}-{((idx + 4) % 12) + 1:02d}-{(idx % 27) + 1:02d}'
+    return None
+
+
+def build_position_replacements(positions, replacement=DEFAULT_REPLACEMENT_TEXT):
+    replacement_entries = get_keyword_replacement_entries(positions, replacement)
+    replacement_by_key = {
+        (normalize_text(entry['word']).lower(), entry['type']): entry['replacement']
+        for entry in replacement_entries
+    }
+    position_replacements = []
+    for pos in positions:
+        pos_type = normalize_pii_type(pos.get('type', 'other'))
+        lookup_key = (normalize_text(pos.get('word', '')).lower(), pos_type)
+        position_replacements.append({
+            'segment': pos['segment'],
+            'start': pos['start'],
+            'end': pos['end'],
+            'replacement': replacement_by_key.get(lookup_key, replacement or DEFAULT_REPLACEMENT_TEXT),
+        })
+    return position_replacements
+
+
+def replace_text_using_entries(text, replacement_entries):
+    out = text
+    for entry in replacement_entries:
+        if normalize_text(entry['word']).lower() in normalize_text(out).lower():
+            out = replace_normalized(out, entry['word'], entry['replacement'])
+    return out
+
+
 def build_normalized_index_map(text):
     normalized_chars = []
     index_map = []
@@ -1454,26 +1706,26 @@ def find_normalized_ranges(text, kw_word):
     return ranges
 
 
-def replace_keywords_in_paragraph_runs(paragraph, keywords, replacement):
+def replace_keywords_in_paragraph_runs(paragraph, replacement_entries):
     if not paragraph.runs:
         return False
 
     matches = []
     full_text = paragraph.text
-    for kw in keywords:
-        for start, end in find_normalized_ranges(full_text, kw['word']):
-            matches.append((start, end))
+    for entry in replacement_entries:
+        for start, end in find_normalized_ranges(full_text, entry['word']):
+            matches.append((start, end, entry['replacement']))
     if not matches:
         return False
 
     deduped = []
     seen = set()
-    for start, end in matches:
+    for start, end, replacement in matches:
         if (start, end) not in seen:
-            deduped.append((start, end))
+            deduped.append((start, end, replacement))
             seen.add((start, end))
 
-    for start, end in sorted(deduped, reverse=True):
+    for start, end, replacement in sorted(deduped, key=lambda item: (item[0], item[1]), reverse=True):
         run_positions = []
         cursor = 0
         for run in paragraph.runs:
@@ -1565,13 +1817,10 @@ def safe_pdf_multi_cell(pdf, line_height, text):
 
 def anonymize_docx(filepath, keywords, replacement='[REDACTADO]'):
     doc = Document(filepath)
+    replacement_entries = get_keyword_replacement_entries(keywords, replacement)
 
     def replace_text(text):
-        out = text
-        for kw in keywords:
-            if normalize_text(kw['word']).lower() in normalize_text(out).lower():
-                out = replace_normalized(out, kw['word'], replacement)
-        return out
+        return replace_text_using_entries(text, replacement_entries)
 
     def keep_run_style(paragraph):
         if paragraph.runs:
@@ -1605,7 +1854,7 @@ def anonymize_docx(filepath, keywords, replacement='[REDACTADO]'):
             if anonymized == original:
                 continue
 
-            if replace_keywords_in_paragraph_runs(para, keywords, replacement) and para.text == anonymized:
+            if replace_keywords_in_paragraph_runs(para, replacement_entries) and para.text == anonymized:
                 continue
 
             style = keep_run_style(para)
@@ -1641,6 +1890,7 @@ def get_pdf_fonts():
 
 def anonymize_pdf(segments, keywords, replacement='[REDACTADO]', title='Documento Anonimizado'):
     pdf = FPDF(format='A4')
+    replacement_entries = get_keyword_replacement_entries(keywords, replacement)
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.set_margins(18, 18, 18)
     pdf.add_page()
@@ -1660,10 +1910,7 @@ def anonymize_pdf(segments, keywords, replacement='[REDACTADO]', title='Document
     pdf.ln(2)
 
     for seg in segments:
-        text = seg['text']
-        for kw in keywords:
-            if normalize_text(kw['word']).lower() in normalize_text(text).lower():
-                text = replace_normalized(text, kw['word'], replacement)
+        text = replace_text_using_entries(seg['text'], replacement_entries)
 
         if has_dejavu:
             if seg['type'] == 'title':
@@ -1698,6 +1945,7 @@ def anonymize_pdf(segments, keywords, replacement='[REDACTADO]', title='Document
 
 def anonymize_docx_to_pdf(filepath, keywords, replacement='[REDACTADO]', title='Documento Anonimizado'):
     doc = Document(filepath)
+    replacement_entries = get_keyword_replacement_entries(keywords, replacement)
     pdf = FPDF(format='A4')
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.set_margins(18, 18, 18)
@@ -1717,11 +1965,7 @@ def anonymize_docx_to_pdf(filepath, keywords, replacement='[REDACTADO]', title='
             pdf.set_font('Helvetica', style, size)
 
     def replace_text(text):
-        out = text
-        for kw in keywords:
-            if normalize_text(kw['word']).lower() in normalize_text(out).lower():
-                out = replace_normalized(out, kw['word'], replacement)
-        return out
+        return replace_text_using_entries(text, replacement_entries)
 
     set_font('B', 15)
     safe_pdf_multi_cell(pdf, 8, title)
@@ -1811,6 +2055,7 @@ def upload():
     logger.info('Texto extraído: %d segmentos', len(segments))
 
     result = run_detection_pipeline(segments)
+    position_replacements = build_position_replacements(result['positions'])
     logger.info('--- Upload completado ---')
 
     return jsonify({
@@ -1819,6 +2064,7 @@ def upload():
         'keywords': result['keywords'],
         'default_keywords': result['default_keywords'],
         'positions': result['positions'],
+        'position_replacements': position_replacements,
         'reasoning': result['reasoning'],
         'queue_notice': result['queue_notice'],
         'ai_status': result['ai_status'],
@@ -1844,12 +2090,14 @@ def reanalyze_ai():
         return jsonify({'error': 'Could not extract text from this document'}), 400
 
     result = run_detection_pipeline(segments, wait_seconds=0)
+    position_replacements = build_position_replacements(result['positions'])
     status_code = 202 if result['ai_status'] in ('busy', 'unavailable') else 200
     return jsonify({
         'filename': filename,
         'keywords': result['keywords'],
         'default_keywords': result['default_keywords'],
         'positions': result['positions'],
+        'position_replacements': position_replacements,
         'ai_positions': result['ai_positions'],
         'reasoning': result['reasoning'],
         'queue_notice': result['queue_notice'],
@@ -1909,7 +2157,7 @@ def export():
     if ext == 'pdf' and output_format == 'docx':
         return jsonify({'error': 'No se puede exportar PDF a DOCX. Usá formato PDF.'}), 400
 
-    kw_entries = [{'word': kw['word'], 'type': kw.get('type', 'other')}
+    kw_entries = [{'word': kw['word'], 'type': normalize_pii_type(kw.get('type', 'other'))}
                   for kw in keywords]
     logger.info('Exportando %s con %d keywords a reemplazar (formato: %s)', filename, len(kw_entries), output_format)
 

@@ -55,7 +55,7 @@ npm install -g opencode-ai@latest
 | Endpoint | Método | Descripción |
 |---|---|---|
 | `/` | GET | Frontend web |
-| `/upload` | POST | Subir PDF/DOCX (multipart `file`). Retorna `{segments, keywords, default_keywords, positions, reasoning, queue_notice, ai_status, analysis_mode}` |
+| `/upload` | POST | Subir PDF/DOCX (multipart `file`). Retorna `{segments, keywords, default_keywords, positions, position_replacements, reasoning, queue_notice, ai_status, analysis_mode}` |
 | `/reanalyze-ai` | POST | Reintentar IA sobre archivo ya subido. Body: `{filename}` |
 | `/export` | POST | Exportar anonimizado. Body JSON: `{filename, keywords[{word,type}], format:docx\|pdf, replacement}` |
 | `/ready` | GET | Health de disponibilidad para HAProxy. Retorna `200` si libre y `503` si busy |
@@ -131,8 +131,10 @@ anonimizador/
 - **Detección PII por regex**: `detect_default_pii()` lee patrones desde `regex_patterns.json`
 - **Detección PII por AymurAI** (opt-in desde panel admin): `call_aymurai_for_segments()` llama a sidecar NER judicial vía `POST /anonymizer/predict` (timeout y URL configurables desde admin)
 - **Detección PII por IA** (opcional desde panel admin): `call_opencode_for_pii()` ejecuta `opencode run` como subprocess (timeout 120s). Se desactiva con `use_opencode=false` en config
+- **Normalización de tipos PII**: `normalize_pii_type()` mapea aliases de IA/NER como `persona`, `domicilio`, `mail`, `genero`, `documento` a tipos internos canónicos (`nombre`, `direccion`, `email`, `sexo`, `dni_argentino`)
 - **Proveedor local**: healthcheck HTTP + semáforo Redis global para concurrencia de inferencias
 - **Normalización Unicode**: `normalize_text()` usa NFKD + elimina combining marks
+- **Reemplazo inteligente**: `build_position_replacements()` genera reemplazos sugeridos por posición para sincronizar preview y export cuando `replacement == [REDACTADO]`
 - **Export DOCX**: reemplaza sobre el documento original preservando mejor `runs`, negritas, itálicas y estructura básica
 - **Export PDF**: usa `fpdf2` con DejaVuSans; si el origen es DOCX, renderiza directamente desde el DOCX para conservar mejor headings, listas y tablas básicas
 - **Reexport**: el archivo subido no se borra tras el primer `/export`; se mantiene hasta el TTL de cleanup para permitir exportar DOCX y PDF sobre el mismo análisis
@@ -143,6 +145,8 @@ anonimizador/
 - **SPA vanilla JS** sin frameworks
 - **Tema oscuro por defecto** con toggle a claro (persistido en localStorage)
 - **Panel documento**: texto con palabras PII resaltadas en amarillo (clickeables para toggle)
+- **Renderizado desacoplado del export**: el documento visible siempre se reconstruye desde `segments` originales. Las posiciones marcadas consultan `position_replacements` devueltos por backend.
+- **Regla visual para fallback `[REDACTADO]`**: si una posición marcada tiene reemplazo simulado, la UI muestra ese valor; si solo tiene fallback `[REDACTADO]`, la UI conserva el texto original pero resaltado. El texto copiado/exportado sí usa `[REDACTADO]` real en esos casos.
 - **Panel lateral**: lista de PII agrupadas, checkbox "marcar todas", agregar palabras manualmente
 - **Botón "Copiar Texto Anonimizado"**: copia el texto con reemplazos al portapapeles
 - **Botón "Ver Razonamiento"**: modal con output completo de la IA
@@ -178,6 +182,21 @@ Tres capas combinadas en `/upload`:
    **Optimización**: cuando AymurAI está activo y cubre suficientes caracteres de un segmento (≥30%), ese segmento se excluye del texto enviado a la IA. Esto reduce tokens, latencia y costo sin perder cobertura.
 
 Posiciones combinadas (sin duplicados) ordenadas por segmento. Orden de pipeline: regex → AymurAI → IA → merge.
+
+## Renderizado y reemplazos
+
+Flujo actual de renderizado/anonimización:
+
+1. `run_detection_pipeline()` devuelve `positions` combinadas.
+2. Backend calcula `position_replacements` con `build_position_replacements()` usando los mismos helpers que `/export`.
+3. Frontend guarda `positions` + `position_replacements` y reconstruye la vista desde `segments` originales en cada toggle.
+4. Si `replacement-text != [REDACTADO]`, preview, copiado y export usan el literal configurado por el usuario.
+5. Si `replacement-text == [REDACTADO]`:
+   - preview muestra simulados cuando existen
+   - preview deja visible el original cuando el backend solo pudo sugerir `[REDACTADO]`
+   - copiado y export aplican el valor real final, incluyendo `[REDACTADO]` en fallbacks
+
+Esto evita que el usuario "pierda contexto" visual en categorías no simulables, pero mantiene el comportamiento seguro en el documento exportado.
 
 ## Configuración de modelo
 
@@ -244,10 +263,10 @@ curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json
 ### Ejecución
 
 ```bash
-# Todos los tests (226 tests, ~2s)
+# Todos los tests (228 tests, ~2s)
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
 
-# Solo unitarios (134 tests)
+# Solo unitarios (136 tests)
 
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v \
   --ignore=testing/test_security.py \

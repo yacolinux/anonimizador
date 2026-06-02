@@ -1,6 +1,6 @@
 # Testing
 
-Suite de tests para el Anonimizador de Documentos. 226 tests en 4 categorías: unitarios, AymurAI, seguridad y calidad de anonimización.
+Suite de tests para el Anonimizador de Documentos. 228 tests en 4 categorías: unitarios, AymurAI, seguridad y calidad de anonimización.
 
 ## Estructura
 
@@ -76,7 +76,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 
 ## Resumen de tests
 
-### Unitarios (134 tests)
+### Unitarios (136 tests)
 
 | Archivo | Tests | Qué cubre |
 |---|---|---|
@@ -86,7 +86,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 | `test_replace_normalized.py` | 20 | Reemplazo simple, con acentos, variantes sin acento, múltiples ocurrencias, números, dirección, replacement custom, loop infinito prevention, case insensitive |
 | `test_filename_validation.py` | 17 | UUID válido (docx/pdf), extensión inválida (exe/txt/zip), path traversal, doble extensión, symlink, `is_path_inside_uploads` |
 | `test_admin_config_validation.py` | 14 | Save/load config, fallback a default cuando archivo falta, model_url/model_name, empty patterns, `is_local_model_provider` |
-| `test_export_docx.py` | 10 | Reemplazo keywords, preserva non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO, preservación de formato en runs, match cruzando múltiples runs |
+| `test_export_docx.py` | 12 | Reemplazo keywords, preserva non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO, preservación de formato en runs, match cruzando múltiples runs, reemplazos simulados consistentes y fallback por tipo |
 | `test_export_pdf.py` | 11 | Reemplazo keywords, preserva non-PII, empty keywords, title segment, list segment, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO, fallback OCR, render de PDF desde DOCX con headings/tablas básicas |
 
 ### Seguridad (41 tests)
@@ -135,6 +135,21 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 | `test_admin_config_validation.py` | Save/load de config, fallback a default, model_url/model_name, empty patterns, `is_local_model_provider` | La persistencia real en Redis, la UI del panel admin, la aplicación inmediata de cambios |
 | `test_export_docx.py` | Reemplazo de keywords en DOCX, preservación de non-PII, tablas, celdas, acentos, custom replacement, preservación básica de runs/itálicas/negritas | La fidelidad visual completa del DOCX resultante, compatibilidad con todas las versiones de Word |
 | `test_export_pdf.py` | Reemplazo de keywords en PDF, preservación de non-PII, segmentos title/list, acentos, custom title, render básico desde DOCX | La fidelidad visual completa del PDF generado, compatibilidad con todos los lectores, ajuste fino tipográfico |
+
+## Cobertura del modo de reemplazo inteligente
+
+La suite actual valida backend para el modo de reemplazo inteligente cuando el replacement es `[REDACTADO]`:
+
+- **Reemplazos simulados por categoría**: `nombre`, `direccion`, `email`, `dni_argentino`, `edad`, `sexo`, `fecha`.
+- **Consistencia por documento**: la misma cadena detectada recibe el mismo reemplazo simulado dentro del mismo export.
+- **Fallback seguro**: tipos no soportados como `sensible` siguen usando `[REDACTADO]`.
+- **Compatibilidad con replacement custom**: si el usuario define otro texto, el backend mantiene el comportamiento literal previo.
+- **Sincronización preview/export**: el backend expone `position_replacements` en `/upload` y `/reanalyze-ai` para que la UI reconstruya la vista desde el texto original sin perder reversibilidad al desmarcar.
+
+Lo que todavía no está cubierto automáticamente:
+
+- Tests del render visual del frontend al marcar/desmarcar entidades.
+- Tests E2E del flujo preview -> export verificando exactamente el mismo texto visible en pantalla.
 
 ### Tests de seguridad
 

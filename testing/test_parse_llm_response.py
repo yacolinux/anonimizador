@@ -120,3 +120,27 @@ def test_parse_type_fallback_to_other():
     output = '```json\n[{"word": "Juan", "type": ""}]\n```'
     result = anon_app.parse_pii_from_output(output)
     assert result[0]['type'] == 'other'
+
+
+def test_parse_normalizes_common_alias_types():
+    output = '```json\n[\n  {"word": "Claudio Perez", "type": "persona"},\n  {"word": "Av. Siempre Viva 742", "type": "domicilio"},\n  {"word": "usuario@test.com", "type": "mail"}\n]\n```'
+    result = anon_app.parse_pii_from_output(output)
+    assert result[0]['type'] == 'nombre'
+    assert result[1]['type'] == 'direccion'
+    assert result[2]['type'] == 'email'
+
+
+def test_clean_opencode_inference_output_removes_migration_noise():
+    raw = (
+        'Performing one time database migration, may take a few minutes...\n'
+        'sqlite-migration:done\n'
+        'Database migration complete.\n'
+        '[0m\n'
+        '> build · deepseek-v4-flash-free\n'
+        '[{"word": "Juan Perez", "type": "persona"}]\n'
+    )
+    cleaned = anon_app.clean_opencode_inference_output(raw)
+    assert 'sqlite-migration' not in cleaned
+    assert 'Database migration complete' not in cleaned
+    assert '> build' not in cleaned
+    assert 'Juan Perez' in cleaned

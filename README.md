@@ -21,6 +21,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - Click para agregar/quitar palabras de la lista de anonimización
   - Checkbox "Marcar todas" para togglear todas las ocurrencias de una palabra
   - Agregar palabras manualmente desde el panel lateral
+  - **Preview de anonimización sincronizada con export**: cuando el texto de reemplazo es `[REDACTADO]`, la UI muestra reemplazos simulados por categoría si existen; si una entidad solo admite fallback `[REDACTADO]`, queda resaltada pero mostrando el texto original. Al desmarcar una entidad, vuelve al texto original.
   - **Copiar Texto Anonimizado** al portapapeles (ideal para chatbots)
   - **Ver Razonamiento** de la IA en modal
   - Tema oscuro/claro con persistencia en localStorage
@@ -28,6 +29,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - **DOCX** (reemplaza palabras preservando mejor runs, negritas, itálicas y estructura básica)
   - **PDF** (genera nuevo documento con tipografía DejaVu; si el origen es DOCX, respeta mejor headings, listas y tablas básicas)
   - *Nota*: PDFs originales solo pueden exportarse a PDF (python-docx no abre PDFs)
+  - **Modo de reemplazo inteligente**: si `replacement` es `[REDACTADO]`, el backend intenta usar datos simulados por categoría (`nombre`, `direccion`, `email`, `dni_argentino`, `edad`, `sexo`, `fecha`) y hace fallback a `[REDACTADO]` para categorías no soportadas (`sensible`, `other`, `manual`, etc.)
 - **Panel de Administración** (acceso discreto ⚙ esquina inferior izquierda):
   - Login con credenciales configurables en `.env`
   - **Prompt**: editar el prompt que se envía a la IA
@@ -139,7 +141,7 @@ anonimizador/
 ├── HAPROXY.md              # Guia de balanceo y health checks
 ├── OPERACION-HA.md         # Runbook single-instance + HA
 ├── TESTING.md              # Documentación completa de tests (qué testea y qué NO)
-├── testing/                # 221 tests: unitarios, seguridad, calidad + smoke bash
+├── testing/                # 228 tests: unitarios, integración, seguridad, calidad + smoke bash
 ├── .github/workflows/      # CI: unit-tests.yml + smoke-tests.yml
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
 ├── Dockerfile.aymurai      # Parche de serialización JSON para int64 de numpy
@@ -156,11 +158,16 @@ anonimizador/
 3. **Detección AymurAI** (opt-in desde panel admin) → si `use_aymurai=true` en config, cada segmento se envía al sidecar AymurAI `POST /anonymizer/predict` para NER judicial en español
 4. **Detección IA** (opcional desde panel admin) → si `use_opencode=true` en config, el texto se envía a **OpenCode** (`opencode run --model ...`) que analiza y devuelve palabras PII adicionales con categorías
 5. **Combinación** → se fusionan posiciones de regex + AymurAI + IA sin duplicados y se devuelven al frontend
-5. **Interacción** → el usuario revisa, agrega o quita palabras, puede copiar el texto anonimizado
-6. **Exportación** → se reemplazan las palabras seleccionadas con `[REDACTADO]` y se descarga el documento
-   - DOCX: se anonimiza sobre el documento original para preservar formato
-   - PDF desde DOCX: se renderiza directamente desde el DOCX para evitar pérdida innecesaria de estructura
-   - El archivo subido se conserva hasta el TTL de limpieza, por lo que se puede exportar más de una vez en formatos distintos sobre el mismo análisis
+6. **Interacción** → el usuario revisa, agrega o quita palabras, puede copiar el texto anonimizado
+7. **Preview / copia** → el frontend reconstruye siempre desde el texto original; si el replacement es `[REDACTADO]`, usa los reemplazos sugeridos por backend para la vista y el copiado
+   - Si una posición tiene reemplazo simulado, la preview muestra ese valor simulado.
+   - Si una posición solo cae en fallback `[REDACTADO]`, la preview mantiene visible el texto original pero resaltado.
+   - El botón "Copiar Texto Anonimizado" sí aplica `[REDACTADO]` real en esos casos fallback.
+8. **Exportación** → se reemplazan las palabras seleccionadas y se descarga el documento
+    - DOCX: se anonimiza sobre el documento original para preservar formato
+    - PDF desde DOCX: se renderiza directamente desde el DOCX para evitar pérdida innecesaria de estructura
+    - Si `replacement = [REDACTADO]`, el backend usa reemplazos simulados por categoría cuando es posible y fallback a `[REDACTADO]` cuando no
+    - El archivo subido se conserva hasta el TTL de limpieza, por lo que se puede exportar más de una vez en formatos distintos sobre el mismo análisis
 
 ### API REST
 
@@ -200,6 +207,9 @@ anonimizador/
   "positions": [
     {"segment": 1, "start": 12, "end": 22, "word": "Juan Pérez", "type": "nombre"}
   ],
+  "position_replacements": [
+    {"segment": 1, "start": 12, "end": 22, "replacement": "Carlos Gomez"}
+  ],
   "reasoning": "Output completo de la IA...",
   "queue_notice": "Inferencia local en cola...",
   "ai_status": "ok",
@@ -210,6 +220,8 @@ anonimizador/
 Valores posibles de `ai_status`: `ok`, `busy`, `unavailable`, `timeout`, `error`.
 
 Cuando `analysis_mode` es `regex_only`, el frontend habilita `Reintentar con IA` y usa `/reanalyze-ai` con polling cada 5s.
+
+`position_replacements` contiene los reemplazos sugeridos por posición para sincronizar preview, copiado y export cuando el replacement elegido es `[REDACTADO]`. El frontend los usa solo como ayuda visual: si el reemplazo sugerido también es `[REDACTADO]`, mantiene visible el texto original pero resaltado.
 
 #### `/export` request
 
@@ -224,6 +236,11 @@ Cuando `analysis_mode` es `regex_only`, el frontend habilita `Reintentar con IA`
   "replacement": "[REDACTADO]"
 }
 ```
+
+Reglas de reemplazo en `/export`:
+
+- Si `replacement` es distinto de `[REDACTADO]`, se usa ese literal exacto para todas las coincidencias.
+- Si `replacement` es `[REDACTADO]`, el backend intenta reemplazos simulados por categoría y conserva `[REDACTADO]` como fallback para tipos no soportados.
 
 ---
 

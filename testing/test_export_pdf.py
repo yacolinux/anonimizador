@@ -22,7 +22,7 @@ def test_anonymize_pdf_replaces_keywords():
     content = _extract_pdf_text(buf)
     assert 'Juan Pérez' not in content
     assert '30.123.456' not in content
-    assert '[REDACTADO]' in content
+    assert 'Paciente:' in content
 
 def test_anonymize_pdf_preserves_non_pii():
     segments = [
@@ -50,7 +50,7 @@ def test_anonymize_pdf_title_segment():
     buf = anon_app.anonymize_pdf(segments, keywords, '[REDACTADO]')
     content = _extract_pdf_text(buf)
     assert 'Juan Pérez' not in content
-    assert '[REDACTADO]' in content
+    assert 'Pericia Psicológica' in content
 
 def test_anonymize_pdf_list_segment():
     segments = [
@@ -67,7 +67,7 @@ def test_anonymize_pdf_list_segment():
     content = _extract_pdf_text(buf)
     for kw in ['Juan Pérez', '30.123.456', 'María López', '40.123.456']:
         assert kw not in content
-    assert content.count('[REDACTADO]') >= 4
+    assert '- ' in content
 
 def test_anonymize_pdf_multiple_segments():
     segments = [
@@ -106,7 +106,7 @@ def test_anonymize_pdf_accented():
     buf = anon_app.anonymize_pdf(segments, keywords, '[REDACTADO]')
     content = _extract_pdf_text(buf)
     assert 'José Martínez' not in content
-    assert '[REDACTADO]' in content
+    assert 'El Dr.' in content
 
 def test_anonymize_pdf_output_is_bytesio():
     segments = [{'type': 'paragraph', 'text': 'Paciente: Juan Pérez'}]
@@ -137,7 +137,7 @@ def test_anonymize_pdf_scanned_pdf_ocr_fallback():
         assert isinstance(buf, BytesIO)
         assert len(buf.getvalue()) > 0
         content = _extract_pdf_text(buf)
-        assert '[REDACTADO]' in content
+        assert content
 
 def test_anonymize_docx_to_pdf_preserves_heading_and_table_content():
     import os
@@ -165,6 +165,29 @@ def test_anonymize_docx_to_pdf_preserves_heading_and_table_content():
         assert 'Informe Clínico' in content
         assert 'Juan Pérez' not in content
         assert '30.123.456' not in content
-        assert '[REDACTADO]' in content
+        assert 'DNI' in content
     finally:
         os.unlink(tmp.name)
+
+
+def test_anonymize_pdf_smart_replacement_preserves_prefix_and_consistency():
+    segments = [
+        {'type': 'paragraph', 'text': 'Paciente: Juan Pérez'},
+        {'type': 'paragraph', 'text': 'Paciente: Juan Pérez'},
+    ]
+    keywords = [{'word': 'Paciente: Juan Pérez', 'type': 'nombre'}]
+    buf = anon_app.anonymize_pdf(segments, keywords, '[REDACTADO]')
+    content = _extract_pdf_text(buf)
+    assert 'Paciente:' in content
+    assert 'Juan Pérez' not in content
+    assert '[REDACTADO]' not in content
+    assert content.count('Paciente:') >= 2
+
+
+def test_anonymize_pdf_unsupported_type_falls_back_to_redactado():
+    segments = [{'type': 'paragraph', 'text': 'Expediente N° 12345/2024'}]
+    keywords = [{'word': 'Expediente N° 12345/2024', 'type': 'sensible'}]
+    buf = anon_app.anonymize_pdf(segments, keywords, '[REDACTADO]')
+    content = _extract_pdf_text(buf)
+    assert '[REDACTADO]' in content
+    assert 'Expediente N° 12345/2024' not in content

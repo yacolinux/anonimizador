@@ -2,6 +2,7 @@ let currentData = null;
 let allPositions = [];
 let markedPositions = null;
 let manualMarked = null;
+let suggestedReplacements = null;
 
 const uploadArea = document.getElementById('upload-area');
 const uploadBtn = document.getElementById('upload-btn');
@@ -139,6 +140,10 @@ function applyAnalysisResult(data, resetManual) {
     word: p.word,
     type: p.type
   }));
+  suggestedReplacements = new Map((data.position_replacements || []).map(item => [
+    `${item.segment}:${item.start}:${item.end}`,
+    item.replacement
+  ]));
   markedPositions = new Set(allPositions.map(p => key(p)));
   if (resetManual) {
     manualMarked = new Set();
@@ -194,6 +199,7 @@ function startAiRetryLoop() {
         currentData.keywords = data.keywords || [];
         currentData.default_keywords = data.default_keywords || [];
         currentData.positions = data.positions || [];
+        currentData.position_replacements = data.position_replacements || [];
         currentData.reasoning = data.reasoning || '';
         applyAnalysisResult(currentData, false);
         retryAiBtn.hidden = true;
@@ -221,6 +227,28 @@ retryAiBtn.addEventListener('click', () => {
 
 function key(p) { return `${p.segment}:${p.start}:${p.end}`; }
 
+function getDefaultReplacement() {
+  return replacementText.value || '[REDACTADO]';
+}
+
+function usesSmartReplacementPreview() {
+  return getDefaultReplacement() === '[REDACTADO]';
+}
+
+function getReplacementForPosition(pos) {
+  if (!usesSmartReplacementPreview()) {
+    return getDefaultReplacement();
+  }
+  return (suggestedReplacements && suggestedReplacements.get(key(pos))) || '[REDACTADO]';
+}
+
+function getPreviewDisplayForMarkedToken(originalText, replacement) {
+  if (!usesSmartReplacementPreview()) {
+    return replacement;
+  }
+  return replacement === '[REDACTADO]' ? originalText : replacement;
+}
+
 function renderDocument(segments) {
   let html = '';
   for (let si = 0; si < segments.length; si++) {
@@ -237,7 +265,7 @@ function renderDocument(segments) {
 
 function getAnonymizedText() {
   if (!currentData) return '';
-  const replacement = replacementText.value || '[REDACTADO]';
+  const replacement = getDefaultReplacement();
   const lines = [];
   for (let si = 0; si < currentData.segments.length; si++) {
     const seg = currentData.segments[si];
@@ -248,11 +276,16 @@ function getAnonymizedText() {
     for (const pos of sorted) {
       const mk = key(pos);
       if (markedPositions.has(mk)) {
-        replacements.push({ start: pos.start, end: pos.end, word: pos.word });
+        replacements.push({
+          start: pos.start,
+          end: pos.end,
+          word: pos.word,
+          replacement: getReplacementForPosition(pos)
+        });
       }
     }
     for (const r of replacements.reverse()) {
-      text = text.slice(0, r.start) + replacement + text.slice(r.end);
+      text = text.slice(0, r.start) + r.replacement + text.slice(r.end);
     }
     for (const w of manualMarked) {
       const regex = new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
@@ -307,7 +340,10 @@ function buildSpans(text, segPositions) {
       const mk = key(pos);
       const isMarked = markedPositions.has(mk);
       const cls = 'word-token pii' + (isMarked ? '' : ' unmarked');
-      parts.push(`<span class="${cls}" data-k="${escapeHtml(mk)}" data-word="${escapeHtml(token)}">${escapeHtml(token)}</span>`);
+      const display = isMarked
+        ? getPreviewDisplayForMarkedToken(token, getReplacementForPosition(pos))
+        : token;
+      parts.push(`<span class="${cls}" data-k="${escapeHtml(mk)}" data-word="${escapeHtml(token)}">${escapeHtml(display)}</span>`);
       cursor = pos.end;
     }
   }
@@ -325,7 +361,10 @@ function buildTextSpans(text) {
     if (/^\w+$/.test(w) && w.length >= 2) {
       const isMarked = markedWord(w);
       const cls = 'word-token' + (isMarked ? ' pii' : '');
-      html += `<span class="${cls}" data-k="manual" data-word="${escapeHtml(w)}">${escapeHtml(w)}</span>`;
+      const display = isMarked
+        ? getPreviewDisplayForMarkedToken(w, getDefaultReplacement())
+        : w;
+      html += `<span class="${cls}" data-k="manual" data-word="${escapeHtml(w)}">${escapeHtml(display)}</span>`;
     } else {
       html += escapeHtml(w);
     }
@@ -372,6 +411,11 @@ addWordBtn.addEventListener('click', () => {
 });
 addWordInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') addWordBtn.click();
+});
+
+replacementText.addEventListener('input', () => {
+  if (!currentData) return;
+  renderDocument(currentData.segments);
 });
 
 function renderPiiList() {

@@ -19,7 +19,7 @@ def test_anonymize_docx_replaces_keywords():
         text = ' '.join(p.text for p in result_doc.paragraphs)
         assert 'Juan Pérez' not in text
         assert '30.123.456' not in text
-        assert '[REDACTADO]' in text
+        assert text != 'Paciente: Juan Pérez, DNI 30.123.456'
     finally:
         os.unlink(tmp.name)
 
@@ -73,8 +73,8 @@ def test_anonymize_docx_multiple_paragraphs():
         buf = anon_app.anonymize_docx(tmp.name, keywords, '[REDACTADO]')
         result_doc = docx.Document(buf)
         full = ' '.join(p.text for p in result_doc.paragraphs)
-        assert '[REDACTADO]' in full
         assert 'Pedro Gómez' not in full
+        assert '40.123.456' not in full
         assert 'nada relevante' in full
     finally:
         os.unlink(tmp.name)
@@ -104,7 +104,7 @@ def test_anonymize_docx_table_cells():
                     full += ' ' + cell.text
         assert 'Juan Pérez' not in full
         assert '30.123.456' not in full
-        assert full.count('[REDACTADO]') >= 2
+        assert full != ' Nombre DNI Juan Pérez 30.123.456'
     finally:
         os.unlink(tmp.name)
 
@@ -138,7 +138,7 @@ def test_anonymize_docx_accented_keyword():
         result_doc = docx.Document(buf)
         text = ' '.join(p.text for p in result_doc.paragraphs)
         assert 'José Martínez' not in text
-        assert '[REDACTADO]' in text
+        assert text != 'El perito es José Martínez'
     finally:
         os.unlink(tmp.name)
 
@@ -176,7 +176,7 @@ def test_anonymize_docx_preserves_other_run_formatting():
         result_doc = docx.Document(buf)
         result_para = result_doc.paragraphs[0]
 
-        assert '[REDACTADO]' in result_para.text
+        assert 'Juan Pérez' not in result_para.text
         assert result_para.runs[0].bold is True
         assert any(run.italic for run in result_para.runs if 'Observación importante' in run.text)
     finally:
@@ -202,8 +202,81 @@ def test_anonymize_docx_preserves_format_when_keyword_spans_runs():
         result_doc = docx.Document(buf)
         result_para = result_doc.paragraphs[0]
 
-        assert '[REDACTADO]' in result_para.text
-        assert any(run.bold for run in result_para.runs if '[REDACTADO]' in run.text)
+        assert 'Juan Pérez' not in result_para.text
+        assert any(run.bold for run in result_para.runs if run.text.strip())
         assert any(run.italic for run in result_para.runs if 'Observación importante' in run.text)
     finally:
         os.unlink(tmp.name)
+
+
+def test_anonymize_docx_smart_replacement_preserves_prefix_and_consistency():
+    import docx
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+    tmp.close()
+    try:
+        doc = docx.Document()
+        doc.add_paragraph('Paciente: Juan Pérez')
+        doc.add_paragraph('Paciente: Juan Pérez')
+        doc.save(tmp.name)
+        keywords = [{'word': 'Paciente: Juan Pérez', 'type': 'nombre'}]
+        buf = anon_app.anonymize_docx(tmp.name, keywords, '[REDACTADO]')
+        result_doc = docx.Document(buf)
+        texts = [p.text for p in result_doc.paragraphs]
+        assert texts[0].startswith('Paciente: ')
+        assert texts[0] == texts[1]
+        assert 'Juan Pérez' not in texts[0]
+        assert '[REDACTADO]' not in texts[0]
+    finally:
+        os.unlink(tmp.name)
+
+
+def test_anonymize_docx_unsupported_type_falls_back_to_redactado():
+    import docx
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+    tmp.close()
+    try:
+        doc = docx.Document()
+        doc.add_paragraph('Expediente N° 12345/2024')
+        doc.save(tmp.name)
+        keywords = [{'word': 'Expediente N° 12345/2024', 'type': 'sensible'}]
+        buf = anon_app.anonymize_docx(tmp.name, keywords, '[REDACTADO]')
+        result_doc = docx.Document(buf)
+        text = ' '.join(p.text for p in result_doc.paragraphs)
+        assert '[REDACTADO]' in text
+        assert 'Expediente N° 12345/2024' not in text
+    finally:
+        os.unlink(tmp.name)
+
+
+def test_build_position_replacements_is_stable_for_same_word():
+    positions = [
+        {'segment': 0, 'start': 0, 'end': 11, 'word': 'Juan Pérez', 'type': 'nombre'},
+        {'segment': 1, 'start': 0, 'end': 11, 'word': 'Juan Pérez', 'type': 'nombre'},
+    ]
+    replacements = anon_app.build_position_replacements(positions)
+    assert len(replacements) == 2
+    assert replacements[0]['replacement'] == replacements[1]['replacement']
+    assert replacements[0]['replacement'] != '[REDACTADO]'
+
+
+def test_build_position_replacements_falls_back_for_unsupported_type():
+    positions = [
+        {'segment': 0, 'start': 0, 'end': 24, 'word': 'Expediente N° 12345/2024', 'type': 'sensible'},
+    ]
+    replacements = anon_app.build_position_replacements(positions)
+    assert replacements == [{
+        'segment': 0,
+        'start': 0,
+        'end': 24,
+        'replacement': '[REDACTADO]',
+    }]
+
+
+def test_build_position_replacements_supports_alias_types():
+    positions = [
+        {'segment': 0, 'start': 0, 'end': 13, 'word': 'Claudio Perez', 'type': 'persona'},
+        {'segment': 0, 'start': 20, 'end': 39, 'word': 'Av. Siempre Viva 742', 'type': 'domicilio'},
+    ]
+    replacements = anon_app.build_position_replacements(positions)
+    assert replacements[0]['replacement'] != '[REDACTADO]'
+    assert replacements[1]['replacement'] != '[REDACTADO]'
