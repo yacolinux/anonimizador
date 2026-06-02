@@ -1,6 +1,6 @@
 # Soporte Ollama Remoto (Privado)
 
-Esta guia describe como configurar la pestaña **Elegir Modelo** para que el comando de OpenCode use un servidor Ollama privado remoto (API compatible OpenAI).
+Esta guia describe como configurar la pestaña **OpenCode** para que el comando de OpenCode use un servidor Ollama privado remoto (API compatible OpenAI).
 
 ## Requisitos
 
@@ -9,7 +9,7 @@ Esta guia describe como configurar la pestaña **Elegir Modelo** para que el com
 - Al menos un modelo ya descargado en Ollama (`ollama pull ...`).
 - Una API key si tu gateway reverse proxy la exige (si no exige, se puede dejar vacia).
 
-## Configuracion parametro por parametro (Elegir Modelo)
+## Configuracion parametro por parametro (tab OpenCode)
 
 ### 1) API Endpoint URL (`model_url`)
 

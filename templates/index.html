@@ -127,8 +127,9 @@
       <div class="admin-tabs">
         <button class="admin-tab active" data-tab="prompt">Prompt</button>
         <button class="admin-tab" data-tab="patterns">Patrones Regex</button>
-        <button class="admin-tab" data-tab="model">Elegir Modelo</button>
+        <button class="admin-tab" data-tab="model">OpenCode</button>
         <button class="admin-tab" data-tab="api-mode">API Directa</button>
+        <button class="admin-tab" data-tab="aymurai">AymurAI</button>
       </div>
       <div class="admin-tab-content" id="admin-tab-prompt">
         <textarea id="admin-prompt" rows="15"></textarea>
@@ -151,6 +152,11 @@
         <button class="admin-secondary-btn" id="admin-reset-opencode-command" type="button">Restaurar comando por defecto</button>
         <button class="btn-primary" id="admin-save-model">Guardar configuración</button>
         <button class="admin-secondary-btn" id="admin-test-inference-btn" type="button">Probar inferencia</button>
+        <div class="admin-checkbox-row" style="margin-top:12px">
+          <input type="checkbox" id="admin-use-opencode">
+          <label for="admin-use-opencode">Habilitar detección con OpenCode</label>
+        </div>
+        <p class="admin-help-text">Cuando está deshabilitado, la detección IA se omite por completo. Solo se usarán regex y AymurAI (si está activo).</p>
       </div>
       <div class="admin-tab-content" id="admin-tab-api-mode" hidden>
         <label for="admin-api-model-url">API Endpoint URL:</label>
@@ -171,6 +177,23 @@
         </div>
         <p class="admin-api-status" id="admin-api-status"></p>
         <pre class="admin-api-logs" id="admin-api-logs" hidden></pre>
+    </div>
+    <div class="admin-tab-content" id="admin-tab-aymurai" hidden>
+      <label for="admin-aymurai-url">URL del sidecar AymurAI:</label>
+      <input type="text" id="admin-aymurai-url" placeholder="http://aymurai:8899">
+      <div class="admin-checkbox-row">
+        <input type="checkbox" id="admin-use-aymurai">
+        <label for="admin-use-aymurai">Habilitar detección con AymurAI (NER judicial)</label>
+      </div>
+      <p class="admin-help-text">Requiere <code>USE_AYMURAI=1</code> en .env y el sidecar AymurAI corriendo.</p>
+      <button class="btn-primary" id="admin-save-aymurai" style="margin-top:6px">Guardar configuración</button>
+      <div class="admin-aymurai-status" id="admin-aymurai-status" style="margin-top:10px">
+        <div class="admin-aymurai-field"><span class="admin-aymurai-label">Sidecar:</span> <span id="aymurai-enabled">—</span></div>
+        <div class="admin-aymurai-field"><span class="admin-aymurai-label">URL:</span> <span id="aymurai-url">—</span></div>
+        <div class="admin-aymurai-field"><span class="admin-aymurai-label">Disponible:</span> <span id="aymurai-available">—</span></div>
+        <div class="admin-aymurai-field" id="aymurai-error-row" hidden><span class="admin-aymurai-label">Error:</span> <span id="aymurai-error"></span></div>
+      </div>
+      <button class="admin-secondary-btn" id="admin-test-aymurai-btn">Probar conexión</button>
     </div>
     <div class="admin-footer">
       <button class="admin-restore-btn" id="admin-restore-defaults-btn">Restaurar config por defecto (solo Prompt y Regex)</button>

@@ -32,6 +32,14 @@ services:
     volumes:
       - redis_data:/data
 
+  aymurai:
+    build:
+      context: .
+      dockerfile: Dockerfile.aymurai
+    profiles: ["aymurai"]
+    ports:
+      - "8899:8899"
+
   web1:
     build: .
     ports:

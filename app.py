@@ -59,6 +59,10 @@ LOGIN_WINDOW_SECONDS = int(os.environ.get('LOGIN_WINDOW_SECONDS', '300'))
 SESSION_BACKEND = os.environ.get('SESSION_BACKEND', 'redis').lower()
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 REDIS_CONFIG_KEY = os.environ.get('REDIS_CONFIG_KEY', 'anonimizador:config')
+USE_AYMURAI = os.environ.get('USE_AYMURAI', '0') == '1'
+AYMURAI_BASE_URL = os.environ.get('AYMURAI_BASE_URL', 'http://aymurai:8899').strip().rstrip('/')
+AYMURAI_TIMEOUT_SECONDS = int(os.environ.get('AYMURAI_TIMEOUT_SECONDS', '20'))
+AYMURAI_MIN_SEGMENT_CHARS = int(os.environ.get('AYMURAI_MIN_SEGMENT_CHARS', '15'))
 
 _api_call_log = []
 _MAX_API_LOG_ENTRIES = 100
@@ -410,6 +414,9 @@ def save_regex_config(
     opencode_command=None,
     api_key=None,
     use_direct_api=None,
+    use_opencode=None,
+    use_aymurai=None,
+    aymurai_url=None,
 ):
     data = {"patterns": patterns, "prompt": prompt}
     if model_url is not None:
@@ -428,6 +435,18 @@ def save_regex_config(
         data["use_direct_api"] = bool(use_direct_api)
     elif "use_direct_api" in load_regex_config():
         data["use_direct_api"] = load_regex_config().get("use_direct_api")
+    if use_opencode is not None:
+        data["use_opencode"] = bool(use_opencode)
+    elif "use_opencode" in load_regex_config():
+        data["use_opencode"] = load_regex_config().get("use_opencode")
+    if use_aymurai is not None:
+        data["use_aymurai"] = bool(use_aymurai)
+    elif "use_aymurai" in load_regex_config():
+        data["use_aymurai"] = load_regex_config().get("use_aymurai")
+    if aymurai_url is not None:
+        data["aymurai_url"] = aymurai_url
+    elif "aymurai_url" in load_regex_config():
+        data["aymurai_url"] = load_regex_config().get("aymurai_url")
     if redis_available:
         try:
             redis_client.set(REDIS_CONFIG_KEY, json.dumps(data, ensure_ascii=False))
@@ -450,6 +469,8 @@ def get_model_config():
         ),
         'api_key': config.get('api_key', os.environ.get('OPENAI_API_KEY', '')),
         'use_direct_api': config.get('use_direct_api', False),
+        'use_opencode': config.get('use_opencode', True),
+        'use_aymurai': config.get('use_aymurai', USE_AYMURAI),
     }
 
 
@@ -1103,32 +1124,206 @@ def run_model_inference(prompt_text, wait_seconds=None):
     return call_opencode_for_inference(prompt_text, wait_seconds=wait_seconds)
 
 
-def run_detection_pipeline(segments, wait_seconds=None):
-    plaintext = segments_to_plaintext(segments)
-    logger.info('Texto plano: %d chars', len(plaintext))
+def get_aymurai_url():
+    config = load_regex_config()
+    return (config.get('aymurai_url', '') or '').strip().rstrip('/') or AYMURAI_BASE_URL
 
-    use_direct = get_model_config().get('use_direct_api', False)
-    if use_direct:
+
+def use_aymurai():
+    if not bool(get_aymurai_url()):
+        return False
+    config = load_regex_config()
+    return config.get('use_aymurai', USE_AYMURAI)
+
+
+def map_aymurai_label_to_type(label_name):
+    label_map = {
+        'NOMBRE': 'nombre',
+        'PER': 'nombre',
+        'GENERO': 'sexo',
+        'FECHA_DE_NACIMIENTO': 'fecha',
+        'FECHA_RESOLUCION': 'fecha',
+        'FECHA_DEL_HECHO': 'fecha',
+        'HORA_DE_INICIO': 'fecha',
+        'HORA_DE_CIERRE': 'fecha',
+        'LUGAR_DEL_HECHO': 'direccion',
+        'LOC': 'direccion',
+        'DIRECCION': 'direccion',
+        'DOMICILIO': 'direccion',
+        'EDAD': 'edad',
+        'EDAD_AL_MOMENTO_DEL_HECHO': 'edad',
+        'DNI': 'dni_argentino',
+        'N_EXPTE_EJE': 'sensible',
+        'TIPO_DE_RESOLUCION': 'sensible',
+        'OBJETO_DE_LA_RESOLUCION': 'sensible',
+        'CONDUCTA': 'sensible',
+        'CONDUCTA_DESCRIPCION': 'sensible',
+        'ART_INFRINGIDO': 'sensible',
+        'DETALLE': 'sensible',
+        'FRASES_AGRESION': 'sensible',
+        'VIOLENCIA_DE_GENERO': 'sensible',
+        'MODALIDAD_DE_LA_VIOLENCIA': 'sensible',
+        'RELACION_Y_TIPO_ENTRE_ACUSADO/A_Y_DENUNCIANTE': 'sensible',
+        'PERSONA_ACUSADA_NO_DETERMINADA': 'sensible',
+        'HIJOS_HIJAS_EN_COMUN': 'sensible',
+        'NACIONALIDAD': 'other',
+        'NIVEL_INSTRUCCION': 'other',
+    }
+    return label_map.get((label_name or '').strip().upper(), 'other')
+
+
+def resolve_aymurai_range(text, label_text, hint_start=None):
+    ranges = find_normalized_ranges(text, label_text)
+    if not ranges:
+        return None
+    if hint_start is None:
+        return ranges[0]
+    return min(ranges, key=lambda item: abs(item[0] - hint_start))
+
+
+def extract_aymurai_label_payload(label):
+    attrs = label.get('attrs') or {}
+    word = (attrs.get('aymurai_alt_text') or label.get('text') or '').strip()
+    start = attrs.get('aymurai_alt_start_char')
+    end = attrs.get('aymurai_alt_end_char')
+    if start is None or end is None:
+        start = label.get('start_char')
+        end = label.get('end_char')
+    return {
+        'word': word,
+        'start': start,
+        'end': end,
+        'type': map_aymurai_label_to_type(attrs.get('aymurai_label')),
+        'label_name': attrs.get('aymurai_label'),
+    }
+
+
+def call_aymurai_for_segments(segments):
+    if not use_aymurai():
+        return [], []
+
+    api_url = f'{get_aymurai_url()}/anonymizer/predict'
+    keywords = []
+    positions = []
+    seen_keywords = set()
+
+    for seg_idx, seg in enumerate(segments):
+        text = (seg.get('text') or '').strip()
+        if len(text) < AYMURAI_MIN_SEGMENT_CHARS:
+            continue
+
+        payload = json.dumps({'text': text}).encode('utf-8')
+        req = Request(
+            api_url,
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        try:
+            with urlopen(req, timeout=AYMURAI_TIMEOUT_SECONDS) as resp:
+                body = resp.read().decode('utf-8', errors='replace')
+                data = json.loads(body)
+        except Exception as e:
+            logger.warning('AymurAI no disponible para segmento %d: %s', seg_idx, e)
+            return [], []
+
+        for label in data.get('labels') or []:
+            parsed = extract_aymurai_label_payload(label)
+            word = parsed['word']
+            if not word:
+                continue
+
+            resolved = resolve_aymurai_range(text, word, parsed['start'])
+            if not resolved:
+                continue
+            start, end = resolved
+            position = {
+                'segment': seg_idx,
+                'start': start,
+                'end': end,
+                'word': text[start:end],
+                'type': parsed['type'],
+            }
+            positions.append(position)
+
+            key = (normalize_text(position['word']).lower(), position['type'])
+            if key not in seen_keywords:
+                seen_keywords.add(key)
+                keywords.append({'word': position['word'], 'type': position['type']})
+
+    logger.info('AymurAI detectó %d keywords / %d posiciones', len(keywords), len(positions))
+    return keywords, positions
+
+
+def _segment_coverage_ratio(seg_text, positions_in_seg):
+    if not positions_in_seg or not seg_text:
+        return 0.0
+    covered = set()
+    for p in positions_in_seg:
+        for i in range(p['start'], p['end']):
+            covered.add(i)
+    return len(covered) / max(len(seg_text), 1)
+
+
+def _get_uncovered_segments(segments, positions, coverage_threshold=0.30):
+    uncovered = []
+    covered_count = 0
+    for seg_idx, seg in enumerate(segments):
+        seg_positions = [p for p in positions if p['segment'] == seg_idx]
+        ratio = _segment_coverage_ratio(seg['text'], seg_positions)
+        if ratio < coverage_threshold:
+            uncovered.append(seg)
+        else:
+            covered_count += 1
+    if covered_count > 0:
+        logger.info(
+            'Optimizacion IA: %d segmentos ya cubiertos (ratio>=%.0f%%), enviando %d a IA',
+            covered_count, coverage_threshold * 100, len(uncovered),
+        )
+    return uncovered
+
+
+def run_detection_pipeline(segments, wait_seconds=None):
+    default_keywords, default_positions = detect_default_pii(segments)
+    logger.info('Regex detecto %d keywords / %d posiciones', len(default_keywords), len(default_positions))
+
+    aymurai_keywords, aymurai_positions = call_aymurai_for_segments(segments)
+
+    pre_positions = default_positions + aymurai_positions
+    uncovered_segments = _get_uncovered_segments(segments, pre_positions)
+    plaintext = segments_to_plaintext(uncovered_segments)
+    logger.info('Texto plano para IA: %d chars (%d segmentos)', len(plaintext), len(uncovered_segments))
+
+    model_config = get_model_config()
+    use_direct = model_config.get('use_direct_api', False)
+    use_opencode = model_config.get('use_opencode', True)
+    if not uncovered_segments:
+        pii_keywords, reasoning_output, queue_notice, ai_status = [], '', None, 'skipped'
+        logger.info('Todos los segmentos cubiertos por regex+AymurAI. IA omitida.')
+    elif use_direct:
         pii_keywords, reasoning_output, queue_notice, ai_status = call_direct_api_for_pii(
             plaintext,
             wait_seconds=wait_seconds,
         )
+    elif not use_opencode:
+        pii_keywords, reasoning_output, queue_notice, ai_status = [], '', None, 'skipped'
+        logger.info('OpenCode deshabilitado en config. IA omitida.')
     else:
         pii_keywords, reasoning_output, queue_notice, ai_status = call_opencode_for_pii(
             plaintext,
             wait_seconds=wait_seconds,
         )
-    logger.info('IA devolvió %d keywords (status=%s)', len(pii_keywords), ai_status)
-
-    default_keywords, default_positions = detect_default_pii(segments)
-    logger.info('Regex detectó %d keywords / %d posiciones', len(default_keywords), len(default_positions))
+    if pii_keywords:
+        logger.info('IA devolvio %d keywords (status=%s)', len(pii_keywords), ai_status)
+    else:
+        logger.info('IA no devolvio keywords (status=%s)', ai_status)
 
     ai_positions = find_word_positions(segments, pii_keywords)
     logger.info('Posiciones IA: %d', len(ai_positions))
 
     seen_ranges = set()
     merged_positions = []
-    for pos in default_positions + ai_positions:
+    for pos in default_positions + aymurai_positions + ai_positions:
         key = (pos['segment'], pos['start'], pos['end'], pos['word'])
         if key not in seen_ranges:
             seen_ranges.add(key)
@@ -1138,14 +1333,15 @@ def run_detection_pipeline(segments, wait_seconds=None):
     logger.info('Total posiciones fusionadas: %d', len(merged_positions))
 
     return {
-        'keywords': pii_keywords,
+        'keywords': aymurai_keywords + pii_keywords,
         'default_keywords': default_keywords,
         'positions': merged_positions,
         'reasoning': reasoning_output,
         'queue_notice': queue_notice,
         'ai_status': ai_status,
-        'analysis_mode': 'full' if ai_status == 'ok' else 'regex_only',
+        'analysis_mode': 'full' if ai_status in ('ok', 'skipped') else 'regex_only',
         'ai_positions': ai_positions,
+        'aymurai_positions': aymurai_positions,
     }
 
 
@@ -1801,6 +1997,9 @@ def admin_get_config():
             'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}'
         ),
         'use_direct_api': config.get('use_direct_api', False),
+        'use_opencode': config.get('use_opencode', True),
+        'use_aymurai': config.get('use_aymurai', USE_AYMURAI),
+        'aymurai_url': config.get('aymurai_url', AYMURAI_BASE_URL),
     })
 
 
@@ -1882,6 +2081,35 @@ def validate_config_use_direct_api(use_direct_api):
     return None
 
 
+def validate_config_use_opencode(use_opencode):
+    if use_opencode is None:
+        return None
+    return None
+
+
+def validate_config_use_aymurai(use_aymurai):
+    if use_aymurai is None:
+        return None
+    return None
+
+
+def validate_config_aymurai_url(aymurai_url):
+    if aymurai_url is None:
+        return None
+    if not isinstance(aymurai_url, str):
+        return 'aymurai_url debe ser un string'
+    if len(aymurai_url) > 500:
+        return 'aymurai_url demasiado larga (máx 500 chars)'
+    if aymurai_url.strip():
+        from urllib.parse import urlparse
+        parsed = urlparse(aymurai_url)
+        if parsed.scheme not in ('http', 'https'):
+            return 'aymurai_url debe usar http o https'
+        if not parsed.netloc:
+            return 'aymurai_url debe incluir un host válido'
+    return None
+
+
 @app.route('/admin/config', methods=['POST'])
 @admin_required
 def admin_save_config():
@@ -1895,6 +2123,9 @@ def admin_save_config():
     api_key = data.get('api_key')
     opencode_command = data.get('opencode_command')
     use_direct_api = data.get('use_direct_api')
+    use_opencode = data.get('use_opencode')
+    use_aymurai = data.get('use_aymurai')
+    aymurai_url = data.get('aymurai_url')
 
     err = validate_config_patterns(patterns)
     if err:
@@ -1914,13 +2145,48 @@ def admin_save_config():
     err = validate_config_use_direct_api(use_direct_api)
     if err:
         return jsonify({'error': err}), 400
+    err = validate_config_use_opencode(use_opencode)
+    if err:
+        return jsonify({'error': err}), 400
+    err = validate_config_use_aymurai(use_aymurai)
+    if err:
+        return jsonify({'error': err}), 400
+    err = validate_config_aymurai_url(aymurai_url)
+    if err:
+        return jsonify({'error': err}), 400
 
     try:
-        save_regex_config(patterns, prompt, model_url, model_name, opencode_command, api_key, use_direct_api)
+        save_regex_config(patterns, prompt, model_url, model_name, opencode_command, api_key, use_direct_api, use_opencode, use_aymurai, aymurai_url)
         return jsonify({'ok': True})
     except Exception as e:
         logger.error('Error guardando config: %s', e)
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/aymurai-status', methods=['GET'])
+@admin_required
+def admin_aymurai_status():
+    config = load_regex_config()
+    aym_url = get_aymurai_url()
+    use_aymurai_config = config.get('use_aymurai', USE_AYMURAI)
+    result = {
+        'enabled': bool(aym_url),
+        'use_aymurai': use_aymurai_config,
+        'url': aym_url,
+        'available': False,
+        'error': None,
+    }
+    if not result['enabled']:
+        return jsonify(result)
+    api_url = f'{aym_url}/anonymizer/predict'
+    try:
+        req = Request(api_url, data=b'{"text":"test"}', headers={'Content-Type': 'application/json'}, method='POST')
+        with urlopen(req, timeout=AYMURAI_TIMEOUT_SECONDS) as resp:
+            if resp.status == 200:
+                result['available'] = True
+    except Exception as e:
+        result['error'] = str(e)
+    return jsonify(result)
 
 
 @app.route('/admin/test-api', methods=['POST'])

@@ -1,6 +1,6 @@
 # Testing
 
-Suite de tests para el Anonimizador de Documentos. 221 tests en 3 categorías: unitarios, seguridad y calidad de anonimización.
+Suite de tests para el Anonimizador de Documentos. 226 tests en 4 categorías: unitarios, AymurAI, seguridad y calidad de anonimización.
 
 ## Estructura
 
@@ -16,6 +16,7 @@ testing/
 ├── test_admin_config_validation.py# Tests unitarios: config del panel admin
 ├── test_export_docx.py            # Tests unitarios: export/anonimización DOCX
 ├── test_export_pdf.py             # Tests unitarios: export/anonimización PDF
+├── test_aymurai_integration.py   # Tests de integración AymurAI (NER judicial)
 ├── test_security.py               # Tests de seguridad (upload, export, admin, rate limit)
 ├── test_anonymization_quality.py  # Tests de calidad con documentos sintéticos
 ├── smoke_single.sh                # Smoke test: stack single (1 instancia)

@@ -521,6 +521,16 @@ const adminApiLogs = document.getElementById('admin-api-logs');
 const adminInferenceModal = document.getElementById('admin-inference-modal');
 const adminInferenceContent = document.getElementById('admin-inference-content');
 const adminInferenceClose = document.getElementById('admin-inference-close');
+const adminUseOpencodeCb = document.getElementById('admin-use-opencode');
+const adminAymuraiEnabled = document.getElementById('aymurai-enabled');
+const adminAymuraiUrl = document.getElementById('aymurai-url');
+const adminAymuraiAvailable = document.getElementById('aymurai-available');
+const adminAymuraiErrorRow = document.getElementById('aymurai-error-row');
+const adminAymuraiError = document.getElementById('aymurai-error');
+const adminTestAymuraiBtn = document.getElementById('admin-test-aymurai-btn');
+const adminUseAymuraiCb = document.getElementById('admin-use-aymurai');
+const adminAymuraiUrlInput = document.getElementById('admin-aymurai-url');
+const adminSaveAymuraiBtn = document.getElementById('admin-save-aymurai');
 
 let adminConfig = null;
 const DEFAULT_OPENCODE_COMMAND = 'opencode run "{message}" --model opencode/{model} --dangerously-skip-permissions --file {file}';
@@ -536,9 +546,6 @@ adminTrigger.addEventListener('click', () => {
 
 adminClose.addEventListener('click', () => {
   adminModal.hidden = true;
-});
-adminModal.addEventListener('click', (e) => {
-  if (e.target === adminModal) adminModal.hidden = true;
 });
 
 adminLoginBtn.addEventListener('click', async () => {
@@ -598,6 +605,9 @@ async function loadAdminConfig() {
     adminApiKeyInput.value = data.api_key || '';
     adminOpencodeCommandInput.value = data.opencode_command || '';
     adminUseDirectApiCb.checked = !!data.use_direct_api;
+    adminUseOpencodeCb.checked = data.use_opencode !== false;
+    adminUseAymuraiCb.checked = data.use_aymurai !== false;
+    adminAymuraiUrlInput.value = data.aymurai_url || '';
     adminApiModelUrlInput.value = data.model_url || '';
     adminApiModelNameInput.value = data.model_name || '';
     adminApiKeyDirectInput.value = data.api_key || '';
@@ -615,6 +625,8 @@ adminTabs.forEach(tab => {
     document.getElementById('admin-tab-patterns').hidden = target !== 'patterns';
     document.getElementById('admin-tab-model').hidden = target !== 'model';
     document.getElementById('admin-tab-api-mode').hidden = target !== 'api-mode';
+    document.getElementById('admin-tab-aymurai').hidden = target !== 'aymurai';
+    if (target === 'aymurai') loadAymuraiStatus();
   });
 });
 
@@ -635,13 +647,17 @@ adminSavePromptBtn.addEventListener('click', async () => {
         model_name: adminConfig.model_name,
         api_key: adminConfig.api_key,
         opencode_command: adminConfig.opencode_command,
-        use_direct_api: adminConfig.use_direct_api
+        use_direct_api: adminConfig.use_direct_api,
+        use_opencode: adminUseOpencodeCb.checked,
+        use_aymurai: adminUseAymuraiCb.checked,
       })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
       showToast('Prompt guardado correctamente');
       adminConfig.prompt = prompt;
+      adminConfig.use_opencode = adminUseOpencodeCb.checked;
+      adminConfig.use_aymurai = adminUseAymuraiCb.checked;
     } else {
       showToast('Error: ' + (data.error || 'No se pudo guardar'));
     }
@@ -673,13 +689,17 @@ adminSavePatternsBtn.addEventListener('click', async () => {
         model_name: adminConfig.model_name,
         api_key: adminConfig.api_key,
         opencode_command: adminConfig.opencode_command,
-        use_direct_api: adminConfig.use_direct_api
+        use_direct_api: adminConfig.use_direct_api,
+        use_opencode: adminUseOpencodeCb.checked,
+        use_aymurai: adminUseAymuraiCb.checked,
       })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
       showToast('Patrones guardados correctamente');
       adminConfig.patterns = patterns;
+      adminConfig.use_opencode = adminUseOpencodeCb.checked;
+      adminConfig.use_aymurai = adminUseAymuraiCb.checked;
     } else {
       showToast('Error: ' + (data.error || 'No se pudo guardar'));
     }
@@ -709,6 +729,8 @@ adminSaveModelBtn.addEventListener('click', async () => {
         api_key: apiKey,
         opencode_command: opencodeCommand,
         use_direct_api: adminConfig.use_direct_api,
+        use_opencode: adminUseOpencodeCb.checked,
+        use_aymurai: adminUseAymuraiCb.checked,
       })
     });
     const data = await res.json();
@@ -718,6 +740,8 @@ adminSaveModelBtn.addEventListener('click', async () => {
       adminConfig.model_name = modelName;
       adminConfig.api_key = apiKey;
       adminConfig.opencode_command = opencodeCommand;
+      adminConfig.use_opencode = adminUseOpencodeCb.checked;
+      adminConfig.use_aymurai = adminUseAymuraiCb.checked;
       adminApiModelUrlInput.value = modelUrl;
       adminApiModelNameInput.value = modelName;
       adminApiKeyDirectInput.value = apiKey;
@@ -749,6 +773,8 @@ adminSaveApiModeBtn.addEventListener('click', async () => {
         api_key: apiKey,
         opencode_command: adminConfig.opencode_command,
         use_direct_api: adminUseDirectApiCb.checked,
+        use_opencode: adminUseOpencodeCb.checked,
+        use_aymurai: adminUseAymuraiCb.checked,
       })
     });
     const data = await res.json();
@@ -758,6 +784,8 @@ adminSaveApiModeBtn.addEventListener('click', async () => {
       adminConfig.model_name = modelName;
       adminConfig.api_key = apiKey;
       adminConfig.use_direct_api = adminUseDirectApiCb.checked;
+      adminConfig.use_opencode = adminUseOpencodeCb.checked;
+      adminConfig.use_aymurai = adminUseAymuraiCb.checked;
       adminModelUrlInput.value = modelUrl;
       adminModelNameInput.value = modelName;
       adminApiKeyInput.value = apiKey;
@@ -798,6 +826,39 @@ adminInferenceModal.addEventListener('click', (e) => {
   if (e.target === adminInferenceModal) adminInferenceModal.hidden = true;
 });
 
+adminUseOpencodeCb.addEventListener('change', async () => {
+  const enabled = adminUseOpencodeCb.checked;
+  try {
+    const res = await fetch('/admin/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patterns: adminConfig.patterns,
+        prompt: adminConfig.prompt,
+        model_url: adminConfig.model_url,
+        model_name: adminConfig.model_name,
+        api_key: adminConfig.api_key,
+        opencode_command: adminConfig.opencode_command,
+        use_direct_api: adminConfig.use_direct_api,
+        use_opencode: enabled,
+        use_aymurai: adminUseAymuraiCb.checked,
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast(enabled ? 'OpenCode habilitado' : 'OpenCode deshabilitado');
+      adminConfig.use_opencode = enabled;
+      adminConfig.use_aymurai = adminUseAymuraiCb.checked;
+    } else {
+      adminUseOpencodeCb.checked = !enabled;
+      showToast('Error: ' + (data.error || 'No se pudo guardar'));
+    }
+  } catch (err) {
+    adminUseOpencodeCb.checked = !enabled;
+    showToast('Error de conexion');
+  }
+});
+
 adminUseDirectApiCb.addEventListener('change', async () => {
   const enabled = adminUseDirectApiCb.checked;
   try {
@@ -812,12 +873,16 @@ adminUseDirectApiCb.addEventListener('change', async () => {
         api_key: adminConfig.api_key,
         opencode_command: adminConfig.opencode_command,
         use_direct_api: enabled,
+        use_opencode: adminUseOpencodeCb.checked,
+        use_aymurai: adminUseAymuraiCb.checked,
       })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
       showToast(enabled ? 'API directa habilitada' : 'API directa deshabilitada (usando opencode)');
       adminConfig.use_direct_api = enabled;
+      adminConfig.use_opencode = adminUseOpencodeCb.checked;
+      adminConfig.use_aymurai = adminUseAymuraiCb.checked;
     } else {
       adminUseDirectApiCb.checked = !enabled;
       showToast('Error: ' + (data.error || 'No se pudo guardar'));
@@ -908,4 +973,130 @@ adminResetOpencodeCommandBtn.addEventListener('click', () => {
   }
   adminOpencodeCommandInput.value = DEFAULT_OPENCODE_COMMAND;
   showToast('Comando opencode restaurado al valor por defecto');
+});
+
+async function loadAymuraiStatus() {
+  try {
+    const res = await fetch('/admin/aymurai-status');
+    const data = await res.json();
+    adminAymuraiEnabled.textContent = data.enabled ? 'Activado' : 'Desactivado';
+    adminAymuraiUrl.textContent = data.url || '(no configurado)';
+    adminAymuraiAvailable.textContent = data.available ? 'Si' : 'No';
+    adminAymuraiErrorRow.hidden = !data.error;
+    adminAymuraiError.textContent = data.error || '';
+    if (data.enabled) {
+      adminUseAymuraiCb.checked = data.use_aymurai !== false;
+      adminConfig.use_aymurai = data.use_aymurai !== false;
+    }
+  } catch (err) {
+    adminAymuraiEnabled.textContent = 'Error';
+    adminAymuraiUrl.textContent = '';
+    adminAymuraiAvailable.textContent = 'No';
+    adminAymuraiErrorRow.hidden = false;
+    adminAymuraiError.textContent = err.message;
+  }
+}
+
+adminUseAymuraiCb.addEventListener('change', async () => {
+  const enabled = adminUseAymuraiCb.checked;
+  const url = adminAymuraiUrlInput.value.trim();
+  try {
+    const res = await fetch('/admin/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patterns: adminConfig.patterns,
+        prompt: adminConfig.prompt,
+        model_url: adminConfig.model_url,
+        model_name: adminConfig.model_name,
+        api_key: adminConfig.api_key,
+        opencode_command: adminConfig.opencode_command,
+        use_direct_api: adminConfig.use_direct_api,
+        use_opencode: adminUseOpencodeCb.checked,
+        use_aymurai: enabled,
+        aymurai_url: url || undefined,
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast(enabled ? 'AymurAI habilitado' : 'AymurAI deshabilitado');
+      adminConfig.use_aymurai = enabled;
+      adminConfig.aymurai_url = url;
+    } else {
+      adminUseAymuraiCb.checked = !enabled;
+      showToast('Error: ' + (data.error || 'No se pudo guardar'));
+    }
+  } catch (err) {
+    adminUseAymuraiCb.checked = !enabled;
+    showToast('Error de conexion');
+  }
+});
+
+adminSaveAymuraiBtn.addEventListener('click', async () => {
+  const enabled = adminUseAymuraiCb.checked;
+  const url = adminAymuraiUrlInput.value.trim();
+  try {
+    const res = await fetch('/admin/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patterns: adminConfig.patterns,
+        prompt: adminConfig.prompt,
+        model_url: adminConfig.model_url,
+        model_name: adminConfig.model_name,
+        api_key: adminConfig.api_key,
+        opencode_command: adminConfig.opencode_command,
+        use_direct_api: adminConfig.use_direct_api,
+        use_opencode: adminUseOpencodeCb.checked,
+        use_aymurai: enabled,
+        aymurai_url: url || undefined,
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast('Configuración AymurAI guardada');
+      adminConfig.use_aymurai = enabled;
+      adminConfig.aymurai_url = url;
+    } else {
+      showToast('Error: ' + (data.error || 'No se pudo guardar'));
+    }
+  } catch (err) {
+    showToast('Error de conexion');
+  }
+});
+
+adminTestAymuraiBtn.addEventListener('click', async () => {
+  adminTestAymuraiBtn.disabled = true;
+  adminTestAymuraiBtn.textContent = 'Probando...';
+  try {
+    const res = await fetch('/admin/aymurai-status');
+    const data = await res.json();
+    adminAymuraiEnabled.textContent = data.enabled ? 'Activado' : 'Desactivado';
+    adminAymuraiUrl.textContent = data.url || '(no configurado)';
+    adminAymuraiAvailable.textContent = data.available ? 'Si' : 'No';
+    adminAymuraiErrorRow.hidden = !data.error;
+    adminAymuraiError.textContent = data.error || '';
+    if (data.enabled) {
+      adminUseAymuraiCb.checked = data.use_aymurai !== false;
+      adminConfig.use_aymurai = data.use_aymurai !== false;
+      adminAymuraiUrlInput.value = data.url || '';
+    }
+    if (data.available) {
+      showToast('Conexión exitosa a AymurAI');
+    } else if (data.error) {
+      showToast('Error: ' + data.error);
+    } else {
+      showToast(data.enabled ? 'AymurAI configurado pero no disponible' : 'AymurAI no disponible (sin sidecar)');
+    }
+  } catch (err) {
+    adminAymuraiEnabled.textContent = 'Error';
+    adminAymuraiUrl.textContent = '';
+    adminAymuraiAvailable.textContent = 'No';
+    adminAymuraiErrorRow.hidden = false;
+    adminAymuraiError.textContent = err.message;
+    showToast('Error de conexión: ' + err.message);
+  } finally {
+    adminTestAymuraiBtn.disabled = false;
+    adminTestAymuraiBtn.textContent = 'Probar conexión';
+  }
 });

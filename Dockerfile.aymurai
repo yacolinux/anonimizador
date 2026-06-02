@@ -1,0 +1,5 @@
+FROM ghcr.io/aymurai/api:full
+
+COPY aymurai-patch.py /app/.venv/lib/python3.10/site-packages/aymurai_json_patch.py
+
+RUN sed -i '1iimport aymurai_json_patch' /app/.venv/lib/python3.10/site-packages/aymurai/api/main.py

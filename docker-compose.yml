@@ -14,6 +14,14 @@ services:
       redis:
         condition: service_healthy
 
+  aymurai:
+    build:
+      context: .
+      dockerfile: Dockerfile.aymurai
+    profiles: ["aymurai"]
+    ports:
+      - "8899:8899"
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]

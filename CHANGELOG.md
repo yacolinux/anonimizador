@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-06-01
+
+### Added
+- **Detección PII por AymurAI (NER judicial opt-in)**: nueva capa opcional entre regex e IA. Se activa desde panel admin (`use_aymurai=true`), sobrescribe env var en runtime.
+  - `call_aymurai_for_segments()`: envía cada segmento al sidecar `POST /anonymizer/predict`.
+  - `map_aymurai_label_to_type()`: mapea 28 labels AymurAI a tipos internos (23 mapeados, fallback `"other"`).
+  - `extract_aymurai_label_payload()`: prioriza campos `alt_text/alt_start_char/alt_end_char` sobre originales.
+  - `resolve_aymurai_range()`: alinea spans predichos al texto real del segmento vía `find_normalized_ranges()`.
+  - Pipeline: `regex → AymurAI → IA → merge`.
+- **Nuevas variables de entorno**: `USE_AYMURAI`, `AYMURAI_BASE_URL`, `AYMURAI_TIMEOUT_SECONDS`, `AYMURAI_MIN_SEGMENT_CHARS` en `.env` y `.env.example`.
+- **Sidecar AymurAI**: servicio `aymurai` con profile `"aymurai"` en `docker-compose.yml` y `docker-compose.ha.yml`. Imagen `ghcr.io/aymurai/api:full`.
+  - `docker compose --profile aymurai up -d` para levantarlo.
+- **Tests de integración AymurAI**: `testing/test_aymurai_integration.py` (5 tests: mapeo de labels, fallback desconocido, prioridad alt, disabled retorna vacío, HTTP mockeado retorna posiciones).
+- **Análisis completo**: `AYMURAI-ANALISIS.md` con mapeo de labels, diseño de integración, sidecar y estrategias.
+- **Checkbox "Habilitar detección con OpenCode"** en panel admin: permite desactivar IA sin borrar config del modelo. Se salta `call_opencode_for_pii()` si `use_opencode=false`.
+- **Checkbox "Habilitar AymurAI"** en panel admin: activa/desactiva AymurAI en runtime (sin depender de env var).
+- **Campo `aymurai_url`** configurable desde panel admin: sobrescribe `AYMURAI_BASE_URL` en runtime.
+- **Endpoint `/admin/aymurai-status`**: retorna estado del sidecar (`{enabled, use_aymurai, url, available, error}`).
+- **Tab AymurAI** en panel admin: enable/disable, URL, guardar y probar conexión.
+- **Tab "Elegir Modelo" renombrado a "OpenCode"** con checkbox de habilitación.
+- **`Dockerfile.aymurai` + `aymurai-patch.py`**: parche de serialización JSON para `int64` de numpy en AymurAI.
+- **Documentación actualizada**: `WORKFLOW.md`, `AGENTS.md`, `README.md`, `CHANGELOG.md`.
+
+### Fixed
+- Degradación segura: si AymurAI falla o `use_aymurai=false`, el flujo regex + IA queda intacto.
+- **Serialización JSON AymurAI**: fix de `TypeError: Object of type int64 is not JSON serializable` vía `Dockerfile.aymurai` + `aymurai-patch.py`.
+
+### Changed
+- `run_detection_pipeline()` ahora ejecuta `call_aymurai_for_segments()` entre regex e IA.
+- Respuesta `/upload` y `/reanalyze-ai` ahora incluyen `aymurai_positions` en el pipeline result.
+- **Optimización IA**: cuando AymurAI cubre ≥30% de un segmento, ese segmento se excluye del texto enviado a opencode/API Directa, reduciendo tokens y latencia. Implementado via `_get_uncovered_segments()` con threshold configurable.
+
 ## 2026-05-31
 
 ### Added

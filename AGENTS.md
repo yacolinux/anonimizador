@@ -43,6 +43,10 @@ npm install -g opencode-ai@latest
 | `OCR_MAX_PAGES` | Máximo de páginas a procesar con OCR | `50` |
 | `OCR_DPI` | Resolución para conversión de PDF a imagen | `200` |
 | `OCR_LANG` | Idioma de Tesseract OCR | `spa` |
+| `USE_AYMURAI` | Activar NER judicial AymurAI (`1`) o no (`0`). Se sobrescribe desde panel admin (`use_aymurai`) | `0` |
+| `AYMURAI_BASE_URL` | URL del sidecar AymurAI. Se sobrescribe desde panel admin (`aymurai_url`) | `http://aymurai:8899` |
+| `AYMURAI_TIMEOUT_SECONDS` | Timeout por llamada HTTP a AymurAI | `20` |
+| `AYMURAI_MIN_SEGMENT_CHARS` | Mínimo de caracteres para enviar segmento a AymurAI | `15` |
 
 ## API
 
@@ -63,12 +67,13 @@ npm install -g opencode-ai@latest
 | `/admin/login` | POST | Login admin. Body: `{user, password}` |
 | `/admin/logout` | POST | Cerrar sesión admin |
 | `/admin/status` | GET | Estado de sesión. Retorna `{logged_in: bool}` |
-| `/admin/config` | GET | Obtener configuración actual. Retorna `{patterns, prompt, model_url, model_name, api_key, opencode_command, use_direct_api}` |
-| `/admin/config` | POST | Guardar configuración. Body: `{patterns[], prompt, model_url, model_name, api_key, opencode_command, use_direct_api}` |
+| `/admin/config` | GET | Obtener configuración actual. Retorna `{patterns, prompt, model_url, model_name, api_key, opencode_command, use_direct_api, use_opencode, use_aymurai, aymurai_url}` |
+| `/admin/config` | POST | Guardar configuración. Body: `{patterns[], prompt, model_url, model_name, api_key, opencode_command, use_direct_api, use_opencode, use_aymurai, aymurai_url}` |
 | `/admin/test-api` | POST | Prueba de conectividad endpoint API |
 | `/admin/test-inference` | POST | Prueba de inferencia con prompt de ejemplo |
 | `/admin/api-logs` | GET | Registro de llamadas API directas |
 | `/admin/config/restore-defaults` | POST | Restaurar Prompt y Patrones Regex a defaults (preserva modelo, API key y API Directa) |
+| `/admin/aymurai-status` | GET | Estado del sidecar AymurAI. Retorna `{enabled, use_aymurai, url, available, error}` |
 
 ## Arquitectura
 
@@ -81,8 +86,8 @@ anonimizador/
 ├── static/
 │   ├── style.css           # CSS con tema oscuro/claro
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, admin panel
-├── docker-compose.yml      # Orquestación Docker
-├── docker-compose.ha.yml   # Pool HA completo: haproxy + 5 instancias activas + redis
+├── docker-compose.yml      # Orquestación Docker (incluye sidecar AymurAI con profile)
+├── docker-compose.ha.yml   # Pool HA completo: haproxy + 5 instancias activas + redis + AymurAI
 ├── haproxy.cfg             # Config base de HAProxy para correr en host
 ├── haproxy.ha.cfg          # Config de HAProxy usada por docker-compose.ha.yml
 ├── haproxy-503.http        # Pagina 503 con auto-reintento cada 10s
@@ -111,6 +116,8 @@ anonimizador/
 │   ├── smoke-tests.yml     # CI: smoke tests E2E (single + HA)
 │   └── unit-tests.yml      # CI: unitarios + seguridad + calidad
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
+├── Dockerfile.aymurai      # Parche de serialización JSON para int64 de numpy
+├── aymurai-patch.py        # Monkey-patch de int64 en app AymurAI
 ├── requirements.txt        # Dependencias Python
 └── .env                    # Configuración sensible
 ```
@@ -122,7 +129,8 @@ anonimizador/
 - **Endpoint `/ready`** para balanceo: reporta estado de ocupación por requests en vuelo (`inflight`)
 - **Extracción de texto**: `pdfplumber` para PDF, `python-docx` para DOCX
 - **Detección PII por regex**: `detect_default_pii()` lee patrones desde `regex_patterns.json`
-- **Detección PII por IA**: `call_opencode_for_pii()` ejecuta `opencode run` como subprocess (timeout 120s)
+- **Detección PII por AymurAI** (opt-in desde panel admin): `call_aymurai_for_segments()` llama a sidecar NER judicial vía `POST /anonymizer/predict` (timeout y URL configurables desde admin)
+- **Detección PII por IA** (opcional desde panel admin): `call_opencode_for_pii()` ejecuta `opencode run` como subprocess (timeout 120s). Se desactiva con `use_opencode=false` en config
 - **Proveedor local**: healthcheck HTTP + semáforo Redis global para concurrencia de inferencias
 - **Normalización Unicode**: `normalize_text()` usa NFKD + elimina combining marks
 - **Export DOCX**: reemplaza sobre el documento original preservando mejor `runs`, negritas, itálicas y estructura básica
@@ -139,11 +147,11 @@ anonimizador/
 - **Botón "Copiar Texto Anonimizado"**: copia el texto con reemplazos al portapapeles
 - **Botón "Ver Razonamiento"**: modal con output completo de la IA
 - **Flujo IA local ocupada**: popup "Proveedor ocupado", reintento cada 5s, botón "Continuar sin IA" y botón "Reintentar con IA"
-- **Panel admin**: botón discreto ⚙ en esquina inferior izquierda, login → tabs (Prompt, Patrones Regex, Elegir Modelo con `model_url`, `model_name`, `api_key`, `opencode_command`, botón guardar y botón probar inferencia; API Directa con `model_url`, `model_name`, `api_key`, toggle, guardar y test/logs) + botón global restaurar config por defecto
+- **Panel admin**: botón discreto ⚙ en esquina inferior izquierda, login → tabs (Prompt, Patrones Regex, OpenCode con checkbox "Habilitar detección con OpenCode" + `model_url`, `model_name`, `api_key`, `opencode_command`, botón guardar y botón probar inferencia; API Directa con `model_url`, `model_name`, `api_key`, toggle, guardar y test/logs; AymurAI con checkbox "Habilitar AymurAI", `aymurai_url`, botón guardar y botón probar conexión) + botón global restaurar config por defecto
 
 ## Detección de PII
 
-Dos capas combinadas en `/upload`:
+Tres capas combinadas en `/upload`:
 
 1. **Regex configurable** (`detect_default_pii`): lee patrones desde `regex_patterns.json`. Incluye:
    - DNI argentino (`XX.XXX.XXX`, `XXXXXXXX`)
@@ -154,13 +162,17 @@ Dos capas combinadas en `/upload`:
    - Emails
    - Palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
 
-2. **IA via opencode** (`call_opencode_for_pii`): ejecuta `opencode run --model opencode/{modelo} --file texto.txt --dangerously-skip-permissions`. El prompt es configurable desde el panel admin. Pide JSON array `[{word, type}]`.
+2. **AymurAI (opt-in, NER judicial)**: `call_aymurai_for_segments()` envía cada segmento al sidecar AymurAI `POST /anonymizer/predict`. Retorna spans exactos mapeados a tipos internos vía `map_aymurai_label_to_type()` (28 labels, 23 mapeados, fallback `"other"`). Se activa/desactiva desde panel admin (`use_aymurai`), no depende de env var en runtime.
 
-Posiciones combinadas (sin duplicados) ordenadas por segmento.
+3. **IA via opencode** (`call_opencode_for_pii`): ejecuta `opencode run --model opencode/{modelo} --file texto.txt --dangerously-skip-permissions`. El prompt es configurable desde el panel admin. Pide JSON array `[{word, type}]`. Se salta si `use_opencode=false` en config.
+
+   **Optimización**: cuando AymurAI está activo y cubre suficientes caracteres de un segmento (≥30%), ese segmento se excluye del texto enviado a la IA. Esto reduce tokens, latencia y costo sin perder cobertura.
+
+Posiciones combinadas (sin duplicados) ordenadas por segmento. Orden de pipeline: regex → AymurAI → IA → merge.
 
 ## Configuración de modelo
 
-El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el panel admin (tab "Elegir Modelo"). La configuración se guarda en `regex_patterns.json` con campos `model_url`, `model_name`, `api_key` y `opencode_command`.
+El modelo se configura en `.env` (`MODEL_NAME`) y puede sobrescribirse desde el panel admin (tab "OpenCode"). La configuración se guarda en `regex_patterns.json` con campos `model_url`, `model_name`, `api_key` y `opencode_command`.
 
 - **Formato**: `provider/modelo` (ej: `opencode/deepseek-v4-flash-free`)
 - **Provider `opencode`**: usa la API key configurada en `auth.json` (generado por `entrypoint.sh` desde `OPENAI_API_KEY`)
@@ -223,7 +235,7 @@ curl -s -b /tmp/cookies.txt http://localhost:5000/admin/config | python3 -m json
 ### Ejecución
 
 ```bash
-# Todos los tests (221 tests, ~2s)
+# Todos los tests (226 tests, ~2s)
 docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v
 
 # Solo unitarios (134 tests)
@@ -242,7 +254,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/test_anonym
 ./testing/run_all.sh
 ```
 
-### Tests unitarios (134 tests)
+### Tests unitarios (139 tests)
 
 Funciones internas de `app.py` testeadas en aislamiento:
 
@@ -254,6 +266,7 @@ Funciones internas de `app.py` testeadas en aislamiento:
 | `test_replace_normalized.py` (20) | `replace_normalized` | Reemplazo simple, con acentos, variantes sin acento, múltiples ocurrencias, números, dirección, replacement custom, prevención de loop infinito con keyword vacío, case insensitive |
 | `test_filename_validation.py` (17) | `is_valid_upload_filename`, `allowed_file`, `is_path_inside_uploads` | UUID válido (docx/pdf), extensión inválida (exe/txt/zip), path traversal en string, doble extensión, symlink, rutas absolutas fuera de uploads |
 | `test_admin_config_validation.py` (14) | `save_regex_config`, `load_regex_config`, `get_pii_patterns`, `get_opencode_prompt`, `get_model_config`, `is_local_model_provider` | Save/load de config, fallback a default cuando archivo falta, model_url/model_name, empty patterns, detección de proveedor local |
+| `test_aymurai_integration.py` (5) | `use_aymurai`, `call_aymurai_for_segments`, `map_aymurai_label_to_type`, `extract_aymurai_label_payload`, `resolve_aymurai_range` | Mapeo de labels AymurAI a tipos internos, fallback a 'other', prioridad de campos alt, disabled retorna vacío, HTTP mockeado retorna posiciones |
 | `test_export_docx.py` (8) | `anonymize_docx` | Reemplazo de keywords, preservación de non-PII, empty keywords, múltiples párrafos, celdas de tabla, replacement string custom, keyword con acento, output BytesIO |
 | `test_export_pdf.py` (11) | `anonymize_pdf`, `extract_text_pdf` | Reemplazo de keywords, preservación de non-PII, empty keywords, segmentos title/list, múltiples segmentos, replacement custom, title custom, acentos, output BytesIO, fallback OCR con PDF escaneado |
 

@@ -10,7 +10,7 @@ Este repositorio tiene **2 workflows** de CI que corren en cada `push`, `pull_re
 
 | Job | Qué corre | Tests | Tiempo |
 |---|---|---|---|
-| `unit-tests` | 8 archivos de tests unitarios | ~132 tests | ~5s |
+| `unit-tests` | 9 archivos de tests unitarios | ~139 tests | ~5s |
 | `security-tests` | `test_security.py` | 41 tests | ~3s |
 | `quality-tests` | `test_anonymization_quality.py` | 46 tests | ~3s |
 
@@ -31,8 +31,9 @@ Este repositorio tiene **2 workflows** de CI que corren en cada `push`, `pull_re
 - `test_replace_normalized.py` — Función de reemplazo
 - `test_filename_validation.py` — Validación de filenames
 - `test_admin_config_validation.py` — Config del panel admin
+- `test_aymurai_integration.py` — Integración AymurAI (NER judicial)
 - `test_export_docx.py` — Anonimización DOCX
-- `test_export_pdf.py` — Anonimización PDF (11 tests, incluye fallback OCR con `scansmpl.pdf`)
+- `test_export_pdf.py` — Anonimización PDF (incluye fallback OCR con `scansmpl.pdf`)
 
 **`security-tests`** — Seguridad de la API:
 - Subida de archivos no permitidos (exe, txt, zip, path traversal, null byte)

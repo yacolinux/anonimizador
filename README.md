@@ -12,8 +12,9 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
 ## ✨ Características
 
 - **Carga drag & drop** de archivos PDF y DOCX (máx 50 MB)
-- **Detección en dos capas**:
+- **Detección en tres capas**:
   - **Regex configurable**: 29 patrones editables desde el panel admin — DNI argentino, direcciones, edad, sexo, nombres, emails, y palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
+  - **AymurAI** (opt-in desde panel admin, NER judicial): detector especializado en lenguaje judicial español. Se activa/desactiva desde admin, no depende de env var en runtime. Requiere sidecar Docker (`docker compose --profile aymurai up -d`)
   - **IA**: vía **OpenCode** con prompts personalizables, usando cualquier modelo LLM compatible OpenAI
 - **Interfaz interactiva**:
   - Documento renderizado con palabras PII resaltadas en **amarillo**
@@ -31,8 +32,9 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
   - Login con credenciales configurables en `.env`
   - **Prompt**: editar el prompt que se envía a la IA
   - **Patrones Regex**: editar los patrones de detección en formato JSON
-  - **Elegir Modelo**: configurar API endpoint URL, nombre del modelo, API key y comando completo de opencode (soporta modelos locales/remotos como Ollama y experimentación de flags), con botón para guardar y botón para probar inferencia
+  - **OpenCode**: checkbox "Habilitar detección con OpenCode" + API endpoint URL, nombre del modelo, API key y comando completo de opencode (soporta modelos locales/remotos como Ollama y experimentación de flags), con botón para guardar y botón para probar inferencia
   - **API Directa**: habilitar detección IA vía HTTP directa al endpoint OpenAI-compatible (sin opencode), con campos propios, botón de guardar, botón de prueba de conexión y visor de logs
+  - **AymurAI** (opt-in): checkbox "Habilitar AymurAI", URL del sidecar AymurAI, botón guardar y botón probar conexión
   - **Restaurar config**: botón que recupera Prompt y Patrones Regex a defaults sin modificar modelo ni API Directa
 - **Normalización Unicode**: maneja acentos correctamente (Pérez ↔ Perez)
 - **Corre en Docker Compose** con un solo comando
@@ -102,6 +104,10 @@ docker compose logs --tail=200 web redis
 | `OCR_MAX_PAGES` | Máximo de páginas a procesar con OCR | `50` |
 | `OCR_DPI` | Resolución para conversión de PDF a imagen | `200` |
 | `OCR_LANG` | Idioma de Tesseract OCR | `spa` |
+| `USE_AYMURAI` | Activar NER judicial AymurAI (`1`) o no (`0`). Se sobrescribe desde panel admin (`use_aymurai`) | `0` |
+| `AYMURAI_BASE_URL` | URL del sidecar AymurAI. Se sobrescribe desde panel admin (`aymurai_url`) | `http://aymurai:8899` |
+| `AYMURAI_TIMEOUT_SECONDS` | Timeout por llamada HTTP a AymurAI | `20` |
+| `AYMURAI_MIN_SEGMENT_CHARS` | Mínimo de caracteres para enviar segmento a AymurAI | `15` |
 
 ### Sin Docker
 
@@ -125,8 +131,8 @@ anonimizador/
 ├── static/
 │   ├── style.css           # CSS con tema oscuro/claro + admin panel
 │   └── app.js              # Lógica frontend: upload, PII toggle, export, copy, admin
-├── docker-compose.yml      # Orquestación Docker
-├── docker-compose.ha.yml   # HA completo: haproxy + 5 instancias activas + redis
+├── docker-compose.yml      # Orquestación Docker (incluye sidecar AymurAI con profile)
+├── docker-compose.ha.yml   # HA completo: haproxy + 5 instancias activas + redis + AymurAI
 ├── haproxy.cfg             # Config base para HAProxy en host
 ├── haproxy.ha.cfg          # Config para HAProxy dentro de Docker Compose HA
 ├── haproxy-503.http         # Pagina 503 de espera con refresh cada 10s
@@ -136,6 +142,8 @@ anonimizador/
 ├── testing/                # 221 tests: unitarios, seguridad, calidad + smoke bash
 ├── .github/workflows/      # CI: unit-tests.yml + smoke-tests.yml
 ├── Dockerfile              # python:3.11-slim + Node.js 22 + opencode-ai
+├── Dockerfile.aymurai      # Parche de serialización JSON para int64 de numpy
+├── aymurai-patch.py        # Monkey-patch de int64 en app AymurAI
 ├── requirements.txt        # Dependencias Python
 ├── .env                    # Configuración sensible
 └── .env.example            # Plantilla de configuración
@@ -145,8 +153,9 @@ anonimizador/
 
 1. **Upload** → se extrae el texto del PDF/DOCX preservando títulos, párrafos y listas
 2. **Detección regex** → patrones desde `regex_patterns.json` buscan DNI, direcciones, edad, sexo, nombres, emails, palabras sensibles
-3. **Detección IA** → el texto se envía a **OpenCode** (`opencode run --model ...`) que analiza y devuelve palabras PII adicionales con categorías
-4. **Combinación** → se fusionan posiciones sin duplicados y se devuelven al frontend
+3. **Detección AymurAI** (opt-in desde panel admin) → si `use_aymurai=true` en config, cada segmento se envía al sidecar AymurAI `POST /anonymizer/predict` para NER judicial en español
+4. **Detección IA** (opcional desde panel admin) → si `use_opencode=true` en config, el texto se envía a **OpenCode** (`opencode run --model ...`) que analiza y devuelve palabras PII adicionales con categorías
+5. **Combinación** → se fusionan posiciones de regex + AymurAI + IA sin duplicados y se devuelven al frontend
 5. **Interacción** → el usuario revisa, agrega o quita palabras, puede copiar el texto anonimizado
 6. **Exportación** → se reemplazan las palabras seleccionadas con `[REDACTADO]` y se descarga el documento
    - DOCX: se anonimiza sobre el documento original para preservar formato
@@ -165,12 +174,13 @@ anonimizador/
 | `/admin/login` | POST | Login panel admin |
 | `/admin/logout` | POST | Logout panel admin |
 | `/admin/status` | GET | Estado de sesión admin |
-| `/admin/config` | GET | Obtener config (patrones, prompt, modelo, API key, comando opencode, modo API directa) |
+| `/admin/config` | GET | Obtener config (patrones, prompt, modelo, API key, comando opencode, use_direct_api, use_opencode, use_aymurai, aymurai_url) |
 | `/admin/config` | POST | Guardar config |
 | `/admin/test-api` | POST | Probar conectividad endpoint API directa |
 | `/admin/test-inference` | POST | Probar inferencia con prompt de ejemplo |
 | `/admin/api-logs` | GET | Ver registros de llamadas API directa |
 | `/admin/config/restore-defaults` | POST | Restaurar Prompt y Patrones Regex a defaults (sin tocar modelo) |
+| `/admin/aymurai-status` | GET | Estado del sidecar AymurAI |
 
 #### `/upload` response
 
@@ -248,7 +258,7 @@ Configurables en `.env`:
 
 1. **Prompt**: Editor del prompt que se envía a la IA. Usa `{text}` como placeholder para el texto del documento.
 2. **Patrones Regex**: Editor JSON de los patrones de detección. Formato: `[{"pattern": "regex", "type": "categoria"}, ...]`
- 3. **Elegir Modelo**: Configurar el modelo LLM:
+ 3. **OpenCode**: Checkbox "Habilitar detección con OpenCode" + configurar el modelo LLM:
     - **API Endpoint URL**: URL base del proveedor (ej: `https://openrouter.ai/api/v1` o `http://localhost:11434/v1` para Ollama)
     - **Nombre del modelo**: Formato `provider/modelo` (ej: `opencode/deepseek-v4-flash-free`)
     - **API Key**: clave del proveedor para ese endpoint/modelo (si se deja vacía, usa `OPENAI_API_KEY` del entorno)
@@ -262,7 +272,13 @@ Configurables en `.env`:
     - **Probar conexión**: llama al endpoint `{model_url}/chat/completions` con un mensaje de prueba
     - **Ver logs**: muestra las últimas llamadas API con timestamp, URL, modelo, duración y preview
 
-> Nota: el botón **Restaurar config por defecto** (al pie del panel) recupera Prompt y Patrones Regex a valores de fábrica sin modificar la configuración de Elegir Modelo ni API Directa.
+ 5. **AymurAI**: Control del detector NER judicial:
+>    - **Checkbox "Habilitar AymurAI"**: activa/desactiva el sidecar AymurAI (se sobrescribe en runtime, no depende de env var)
+>    - **URL del sidecar**: URL base de AymurAI (default: `http://aymurai:8899`)
+>    - **Guardar configuración**: persiste los cambios del tab
+>    - **Probar conexión**: llama al endpoint `{aymurai_url}/anonymizer/predict` con un payload de prueba
+
+> Nota: el botón **Restaurar config por defecto** (al pie del panel) recupera Prompt y Patrones Regex a valores de fábrica sin modificar la configuración de OpenCode, API Directa ni AymurAI.
 
 > Nota: para configurar **Ollama remoto privado** (servidor propio con endpoint OpenAI-compatible), ver ejemplo completo y recomendaciones en `OLLAMA.md`.
 
@@ -355,15 +371,16 @@ curl -s http://localhost:8404/stats
 
 ## 🧪 Testing
 
-El proyecto tiene **221 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
+El proyecto tiene **226 tests** en 3 categorías. Detalle completo en [TESTING.md](TESTING.md).
 
 ### Qué se testea
 
 | Tipo | Tests | Qué cubre |
 |---|---|---|
-| **Unitarios** | 130 | Regex PII, parser de IA, Unicode, reemplazo, filenames, config admin, export DOCX/PDF |
+| **Unitarios** | 139 | Regex PII, parser de IA, Unicode, reemplazo, filenames, config admin, export DOCX/PDF, AymurAI |
 | **Seguridad** | 34 | Archivos no permitidos, path traversal, rate limit login, cookies seguras, auth admin |
 | **Calidad** | 46 | Documentos sintéticos con DNI, CUIL, nombres, domicilios, expedientes, víctimas, imputados, menores, delitos sexuales, violencia, fallecimientos, organismos judiciales |
+| **AymurAI** | 5 | Mapeo de labels, fallback, prioridad alt, disabled, HTTP mock |
 | **Smoke (E2E)** | 2 scripts | Stack single y HA completo (upload → export) |
 
 ### Qué NO se testea

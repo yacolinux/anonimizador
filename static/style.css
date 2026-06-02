@@ -34,8 +34,8 @@
   --upload-border: #3a3a4a;
   --upload-hover-bg: #252540;
   --upload-dragover: #2a2a50;
-  --toast-bg: #2a2a3a;
-  --toast-border: #3a3a4a;
+  --toast-bg: #3a3a5a;
+  --toast-border: #5a5a8a;
   --spinner-track: #333;
   --remove-hover-bg: #3a2020;
   --remove-hover-color: #ff6b6b;
@@ -77,8 +77,8 @@ body.light-theme {
   --upload-border: #c0c8d4;
   --upload-hover-bg: #f8f9ff;
   --upload-dragover: #eef1ff;
-  --toast-bg: #1a1a2e;
-  --toast-border: #333;
+  --toast-bg: #ffffff;
+  --toast-border: #d4d8e0;
   --spinner-track: #e0e4e8;
   --remove-hover-bg: #fee2e2;
   --remove-hover-color: #dc2626;
@@ -678,6 +678,7 @@ body {
 
 .toast.show {
   opacity: 1;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
 
 @media (max-width: 900px) {
@@ -1010,4 +1011,22 @@ body {
 .admin-restore-btn:hover {
   background: var(--hover-bg);
   color: var(--text-body);
+}
+.admin-aymurai-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.admin-aymurai-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.admin-aymurai-label {
+  font-weight: 600;
+  color: var(--text-body);
+  min-width: 90px;
 }
