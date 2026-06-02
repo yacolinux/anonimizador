@@ -153,13 +153,22 @@ anonimizador/
 
 Tres capas combinadas en `/upload`:
 
-1. **Regex configurable** (`detect_default_pii`): lee patrones desde `regex_patterns.json`. Incluye:
+1. **Regex configurable** (`detect_default_pii`): lee patrones desde `regex_patterns.json` (51 patrones). Incluye:
    - DNI argentino (`XX.XXX.XXX`, `XXXXXXXX`)
+   - CUIL/CUIT (`XX-XXXXXXXX-X`)
+   - Pasaporte, Libreta Cívica, Libreta Militar
    - Direcciones (`calle`, `av.`, `domicilio` + texto + número)
+   - Teléfonos (formatos argentinos: +54, 011, 15-XXXX-XXXX)
    - Edad (`XX años`)
    - Sexo (`Masculino`, `Femenino`, etc.)
    - Nombres con prefijo (`Paciente:`, `Sr.`, etc.)
    - Emails
+   - Fechas de nacimiento, lugar de nacimiento
+   - CBU, tarjeta de crédito, montos en pesos
+   - Ciudades/provincias, barrios/localidades
+   - Relaciones familiares (padre, madre, tutor legal, cónyuge)
+   - Empleador, escuela, matrícula profesional
+   - Instituciones (comisaría, penitenciaría, juzgado, Corte Suprema, Cámara, Defensoría)
    - Palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
 
 2. **AymurAI (opt-in, NER judicial)**: `call_aymurai_for_segments()` envía cada segmento al sidecar AymurAI `POST /anonymizer/predict`. Retorna spans exactos mapeados a tipos internos vía `map_aymurai_label_to_type()` (28 labels, 23 mapeados, fallback `"other"`). Se activa/desactiva desde panel admin (`use_aymurai`), no depende de env var en runtime.
@@ -260,7 +269,7 @@ Funciones internas de `app.py` testeadas en aislamiento:
 
 | Archivo | Funciones testeadas | Qué valida |
 |---|---|---|
-| `test_regex_detection.py` (20) | `detect_default_pii`, `get_pii_patterns` | Cada patrón regex contra textos específicos: DNI con/sin puntos, dirección (calle/av/domicilio/pasaje/ruta), edad, sexo, nombre con prefijo, email, palabras sensibles (abus/viol/homicid/femicid/forens/expedient/denuncia/etc.), posiciones correctas, sin falsos positivos |
+| `test_regex_detection.py` (20) | `detect_default_pii`, `get_pii_patterns` | Cada patrón regex contra textos específicos: DNI con/sin puntos, CUIL/CUIT, dirección (calle/av/domicilio/pasaje/ruta), edad, sexo, nombre con prefijo, email, palabras sensibles (abus/viol/homicid/femicid/forens/expedient/denuncia/etc.), posiciones correctas, sin falsos positivos |
 | `test_parse_llm_response.py` (24) | `parse_pii_from_output` | Todos los formatos de respuesta de IA: JSON fenced con/sin lang, inline array, pair notation con comillas, tablas markdown, malformed JSON, ANSI escape codes, fallback a bracket extraction, empty/none/whitespace, priorización fenced sobre inline |
 | `test_unicode_normalization.py` (18) | `normalize_text`, `find_word_positions` | NFKD decomposition, combining marks, acentos (Pérez→Perez), matching accent-insensitive, múltiples matches en un segmento, no match, composed vs decomposed chars |
 | `test_replace_normalized.py` (20) | `replace_normalized` | Reemplazo simple, con acentos, variantes sin acento, múltiples ocurrencias, números, dirección, replacement custom, prevención de loop infinito con keyword vacío, case insensitive |

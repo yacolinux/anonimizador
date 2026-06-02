@@ -117,7 +117,7 @@ async function uploadFile(file) {
     }
 
     applyAnalysisResult(data, true);
-    if (data.ai_status && data.ai_status !== 'ok') {
+    if (data.ai_status && !['ok', 'disabled', 'skipped'].includes(data.ai_status)) {
       retryAiBtn.hidden = false;
       startAiRetryLoop();
     } else {

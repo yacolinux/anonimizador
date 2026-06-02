@@ -26,6 +26,8 @@
 ### Fixed
 - Degradación segura: si AymurAI falla o `use_aymurai=false`, el flujo regex + IA queda intacto.
 - **Serialización JSON AymurAI**: fix de `TypeError: Object of type int64 is not JSON serializable` vía `Dockerfile.aymurai` + `aymurai-patch.py`.
+- **Modal "Proveedor ocupado" no debe aparecer cuando OpenCode está deshabilitado**: se cambió `ai_status` de `'skipped'` a `'disabled'` en backend cuando `use_opencode=false`; frontend salta reintento para `'disabled'` y `'skipped'`. Solo `'busy'`/`'unavailable'` disparan el modal de espera.
+- **Expansión masiva de patrones regex**: de 29 a 51 patrones. Nuevos tipos: `cuil_cuit`, `pasaporte`, `lib_civica`, `lib_militar`, `telefono` (formatos argentinos), `fecha_nac`, `lugar_nac`, `cbu`, `tarjeta_credito`, `monto_pesos`, `ciudad_prov`, `barrio_localidad`, `relacion_familiar`, `empleador`, `nombre_escuela`, `matricula_prof`, `comisaria`, `penitenciaria`, `juzgado`, `corte_suprema`, `camara`, `defensoria`.
 
 ### Changed
 - `run_detection_pipeline()` ahora ejecuta `call_aymurai_for_segments()` entre regex e IA.

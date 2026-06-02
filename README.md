@@ -13,7 +13,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
 
 - **Carga drag & drop** de archivos PDF y DOCX (máx 50 MB)
 - **Detección en tres capas**:
-  - **Regex configurable**: 29 patrones editables desde el panel admin — DNI argentino, direcciones, edad, sexo, nombres, emails, y palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
+  - **Regex configurable**: 51 patrones editables desde el panel admin — DNI argentino, CUIL/CUIT, pasaporte, libreta cívica/militar, direcciones, teléfonos (formatos argentinos), edad, sexo, nombres, emails, fechas/lugar de nacimiento, CBU, tarjeta de crédito, montos, ciudades/provincias, barrios, relaciones familiares, empleador, escuela, matrícula profesional, instituciones (comisaría, penitenciaría, juzgado, Corte Suprema, Cámara, Defensoría), y palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
   - **AymurAI** (opt-in desde panel admin, NER judicial): detector especializado en lenguaje judicial español. Se activa/desactiva desde admin, no depende de env var en runtime. Requiere sidecar Docker (`docker compose --profile aymurai up -d`)
   - **IA**: vía **OpenCode** con prompts personalizables, usando cualquier modelo LLM compatible OpenAI
 - **Interfaz interactiva**:
@@ -233,13 +233,33 @@ Patrones por defecto en `regex_patterns.json` (editables desde el panel admin):
 
 | Tipo | Patrón | Ejemplo |
 |---|---|---|
-| DNI argentino | `\b\d{1,2}\.?\d{3}\.?\d{3}\b` | `30.123.456` |
-| DNI sin puntos | `\b\d{7,8}\b` | `30123456` |
-| Dirección | `(?:calle\|av\.|avenida\|domicilio...) + texto + número` | `Av. Siempre Viva 742` |
+| DNI argentino | `\b\d{1,2}\.?\d{3}\.?\d{3}\b`, `\b\d{7,8}\b` | `30.123.456`, `30123456` |
+| CUIL/CUIT | `\b\d{2}-\d{8}-\d{1}\b` | `20-30123456-7` |
+| Pasaporte | `[A-Z]{2,3}\d{6,9}` | `AA1234567` |
+| Libreta Cívica/Militar | `LC/LM + dígitos` | `LC 4.123.456` |
+| Dirección | `(?:calle\|av\.|avenida|domicilio...) + texto + número` | `Av. Siempre Viva 742` |
+| Teléfono | `(?:teléfono\|celular) + formato argentino` | `+54 9 11 12345678`, `15-1234-5678` |
 | Edad | `\d+\s*(?:años\|anios\|años de edad)` | `45 años` |
 | Sexo | `\b(?:masculino\|femenino\|varón\|mujer...)\b` | `Masculino` |
 | Nombre | `(?:paciente\|nombre\|Sr.\|Sra....) + nombre + apellido` | `Paciente: Carlos Martínez` |
 | Email | `\b[\w.-]+@[\w.-]+\.\w{2,}\b` | `juan@mail.com` |
+| Fecha nacimiento | `(?:fecha de nacimiento) + DD/MM/YYYY` | `15/03/1990` |
+| Lugar nacimiento | `(?:nacido en\|natural de) + lugar` | `Buenos Aires` |
+| CBU | 22 dígitos | `0000003100000012345678` |
+| Tarjeta crédito | 16 dígitos en grupos de 4 | `1234 5678 9012 3456` |
+| Monto pesos | `$ + cifras` | `$50.000` |
+| Ciudad/Provincia | `(?:provincia\|ciudad) de + nombre` | `Provincia de Córdoba` |
+| Barrio/Localidad | `(?:barrio\|localidad) + nombre` | `Barrio San Martín` |
+| Relación familiar | `(?:padre\|madre\|tutor legal\|cónyuge...) de` | `madre de` |
+| Empleador | `(?:empresa donde trabaja\|empleador...) + nombre` | `Empresa donde trabaja: Tech SA` |
+| Escuela | `(?:escuela\|colegio\|universidad) + N°/nombre` | `Escuela Nº 45` |
+| Matrícula profesional | `matrícula + número` | `Matrícula nº 12.345` |
+| Comisaría | `comisaría + N°/nombre` | `Comisaría Nº 5` |
+| Penitenciaría | `penitenciaría/cárcel + N°/nombre` | `Penitenciaría Nº 2` |
+| Juzgado/Tribunal | `juzgado/tribunal + N°/nombre` | `Juzgado Nº 12` |
+| Corte Suprema | `Corte Suprema de Justicia` | — |
+| Cámara | `Cámara de + nombre` | `Cámara de Apelaciones` |
+| Defensoría | `Defensoría del Pueblo` | — |
 | Sensibles | `abus\w*`, `viol\w*`, `fallec\w*`, `homicid\w*`, `femicid\w*`, `lesion\w*`, `amenaz\w*`, `agred\w*`, `imput\w*`, `conden\w*`, `deten\w*`, `testig\w*`, `denunci\w*`, `perici\w*`, `forens\w*`, `cadav\w*`, `autops\w*`, `necrops\w*`, `identif\w*`, `domicil\w*`, `document\w*`, `expedient\w*` | `abuso`, `homicidio`, `forense` |
 
 ---
@@ -377,7 +397,7 @@ El proyecto tiene **226 tests** en 3 categorías. Detalle completo en [TESTING.m
 
 | Tipo | Tests | Qué cubre |
 |---|---|---|
-| **Unitarios** | 139 | Regex PII, parser de IA, Unicode, reemplazo, filenames, config admin, export DOCX/PDF, AymurAI |
+| **Unitarios** | 139 | Regex PII (51 patrones), parser de IA, Unicode, reemplazo, filenames, config admin, export DOCX/PDF, AymurAI |
 | **Seguridad** | 34 | Archivos no permitidos, path traversal, rate limit login, cookies seguras, auth admin |
 | **Calidad** | 46 | Documentos sintéticos con DNI, CUIL, nombres, domicilios, expedientes, víctimas, imputados, menores, delitos sexuales, violencia, fallecimientos, organismos judiciales |
 | **AymurAI** | 5 | Mapeo de labels, fallback, prioridad alt, disabled, HTTP mock |

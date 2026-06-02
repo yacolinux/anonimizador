@@ -1306,7 +1306,7 @@ def run_detection_pipeline(segments, wait_seconds=None):
             wait_seconds=wait_seconds,
         )
     elif not use_opencode:
-        pii_keywords, reasoning_output, queue_notice, ai_status = [], '', None, 'skipped'
+        pii_keywords, reasoning_output, queue_notice, ai_status = [], '', None, 'disabled'
         logger.info('OpenCode deshabilitado en config. IA omitida.')
     else:
         pii_keywords, reasoning_output, queue_notice, ai_status = call_opencode_for_pii(
@@ -1339,7 +1339,7 @@ def run_detection_pipeline(segments, wait_seconds=None):
         'reasoning': reasoning_output,
         'queue_notice': queue_notice,
         'ai_status': ai_status,
-        'analysis_mode': 'full' if ai_status in ('ok', 'skipped') else 'regex_only',
+        'analysis_mode': 'full' if ai_status in ('ok', 'skipped', 'disabled') else 'regex_only',
         'ai_positions': ai_positions,
         'aymurai_positions': aymurai_positions,
     }

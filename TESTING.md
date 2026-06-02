@@ -80,7 +80,7 @@ docker compose run --rm -e SESSION_BACKEND=cookie web pytest testing/ -v --cov=a
 
 | Archivo | Tests | Qué cubre |
 |---|---|---|
-| `test_regex_detection.py` | 20 | DNI (con/sin puntos), dirección, edad, sexo, nombre, email, palabras sensibles (abus, viol, homicid, forens, expediente, denuncia, etc.), posiciones correctas, sin falsos positivos |
+| `test_regex_detection.py` | 20 | DNI (con/sin puntos), CUIL/CUIT, dirección, edad, sexo, nombre, email, palabras sensibles (abus, viol, homicid, forens, expediente, denuncia, etc.), posiciones correctas, sin falsos positivos |
 | `test_parse_llm_response.py` | 24 | JSON fenced (con/sin lang), inline array, pair notation, tablas markdown, malformed JSON, ANSI escape codes, fallback a bracket extraction, empty/none/whitespace |
 | `test_unicode_normalization.py` | 18 | NFKD decomposition, combining marks, acentos (Pérez→Perez), find_word_positions accent-insensitive, múltiples matches, no match |
 | `test_replace_normalized.py` | 20 | Reemplazo simple, con acentos, variantes sin acento, múltiples ocurrencias, números, dirección, replacement custom, loop infinito prevention, case insensitive |
