@@ -14,7 +14,7 @@ Aplicación web para detectar y anonimizar datos personales en documentos PDF y 
 - **Carga drag & drop** de archivos PDF y DOCX (máx 50 MB)
 - **Detección en tres capas**:
   - **Regex configurable**: 51 patrones editables desde el panel admin — DNI argentino, CUIL/CUIT, pasaporte, libreta cívica/militar, direcciones, teléfonos (formatos argentinos), edad, sexo, nombres, emails, fechas/lugar de nacimiento, CBU, tarjeta de crédito, montos, ciudades/provincias, barrios, relaciones familiares, empleador, escuela, matrícula profesional, instituciones (comisaría, penitenciaría, juzgado, Corte Suprema, Cámara, Defensoría), y palabras sensibles (`abus*`, `viol*`, `homicid*`, `femicid*`, `forens*`, `expedient*`, etc.)
-  - **AymurAI** (opt-in desde panel admin, NER judicial): detector especializado en lenguaje judicial español. Se activa/desactiva desde admin, no depende de env var en runtime. Requiere sidecar Docker (`docker compose --profile aymurai up -d`)
+  - **AymurAI** (opt-in desde panel admin, NER judicial): detector especializado en lenguaje judicial español. Se activa/desactiva desde admin, no depende de env var en runtime. Sidecar incluido en `docker compose up` por defecto (puerto 8899).
   - **IA**: vía **OpenCode** con prompts personalizables, usando cualquier modelo LLM compatible OpenAI
 - **Interfaz interactiva**:
   - Documento renderizado con palabras PII resaltadas en **amarillo**

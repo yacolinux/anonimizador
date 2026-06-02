@@ -10,8 +10,7 @@
   - `resolve_aymurai_range()`: alinea spans predichos al texto real del segmento vía `find_normalized_ranges()`.
   - Pipeline: `regex → AymurAI → IA → merge`.
 - **Nuevas variables de entorno**: `USE_AYMURAI`, `AYMURAI_BASE_URL`, `AYMURAI_TIMEOUT_SECONDS`, `AYMURAI_MIN_SEGMENT_CHARS` en `.env` y `.env.example`.
-- **Sidecar AymurAI**: servicio `aymurai` con profile `"aymurai"` en `docker-compose.yml` y `docker-compose.ha.yml`. Imagen `ghcr.io/aymurai/api:full`.
-  - `docker compose --profile aymurai up -d` para levantarlo.
+- **Sidecar AymurAI**: servicio `aymurai` incluido por defecto en `docker-compose.yml` y `docker-compose.ha.yml`. Imagen `ghcr.io/aymurai/api:full`. Arranca automáticamente con `docker compose up`.
 - **Tests de integración AymurAI**: `testing/test_aymurai_integration.py` (5 tests: mapeo de labels, fallback desconocido, prioridad alt, disabled retorna vacío, HTTP mockeado retorna posiciones).
 - **Análisis completo**: `AYMURAI-ANALISIS.md` con mapeo de labels, diseño de integración, sidecar y estrategias.
 - **Checkbox "Habilitar detección con OpenCode"** en panel admin: permite desactivar IA sin borrar config del modelo. Se salta `call_opencode_for_pii()` si `use_opencode=false`.

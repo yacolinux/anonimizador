@@ -143,8 +143,8 @@ Variables de entorno (se sobrescriben desde panel admin en runtime):
 
 Sidecar:
 
-- se despliega con `docker compose --profile aymurai up -d`
-- definido en `docker-compose.yml` y `docker-compose.ha.yml` con profile `"aymurai"`
+- se despliega automáticamente con `docker compose up`
+- definido en `docker-compose.yml` y `docker-compose.ha.yml` como servicio por defecto
 - imagen: `ghcr.io/aymurai/api:full` (~8GB)
 
 ## Paso 5: detección por IA (con optimización de cobertura)

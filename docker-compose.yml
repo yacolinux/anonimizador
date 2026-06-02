@@ -18,7 +18,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.aymurai
-    profiles: ["aymurai"]
     ports:
       - "8899:8899"
 
